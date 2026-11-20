@@ -1,35 +1,38 @@
 name: Build DoxBon iOS Library
 
-on:
-  workflow_dispatch:
+'on':
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   build:
+    name: Build iOS dylib
     runs-on: macos-15
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Build iOS dylib
+      - name: Build DoxBon
+        shell: bash
         run: |
-          set -e
+          set -euo pipefail
+          test -f DoxBon.dylib.m || { echo "Missing DoxBon.dylib.m in repository root"; exit 1; }
           SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
           mkdir -p build
-          xcrun --sdk iphoneos clang \\
-            -fobjc-arc \\
-            -dynamiclib \\
-            -arch arm64 \\
-            -isysroot "$SDK" \\
-            -miphoneos-version-min=13.0 \\
-            DoxBon.dylib.m \\
-            -framework Foundation \\
-            -framework UIKit \\
+          xcrun --sdk iphoneos clang \
+            -fobjc-arc \
+            -dynamiclib \
+            -arch arm64 \
+            -isysroot "$SDK" \
+            -miphoneos-version-min=13.0 \
+            DoxBon.dylib.m \
+            -framework Foundation \
+            -framework UIKit \
             -o build/DoxBon.dylib
 
-      - name: Upload build artifact
+      - name: Upload DoxBon dylib
         uses: actions/upload-artifact@v4
         with:
           name: DoxBon-iOS
