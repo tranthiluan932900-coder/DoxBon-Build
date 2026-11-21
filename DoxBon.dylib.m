@@ -11,6 +11,7 @@ static NSString * const DBZalo = @"0854582858";
 @property(nonatomic,strong) NSString *activeKey;
 @property(nonatomic,strong) NSDate *expiryDate;
 @property(nonatomic,strong) UIView *contentView;
+@property(nonatomic,strong) NSString *expiryText;
 @end
 
 @implementation DBMenuController
@@ -58,8 +59,10 @@ static NSString * const DBZalo = @"0854582858";
 
 - (void)dragPanel:(UIPanGestureRecognizer *)gesture {
     CGPoint delta = [gesture translationInView:self.view];
-    self.panel.center = CGPointMake(self.panel.center.x + delta.x, self.panel.center.y + delta.y);
-    [gesture setTranslation:CGPointZero inView:self.view];
+    self.panel.center = CGPointMake(self.panel.center.x + delta.x,
+                                    self.panel.center.y + delta.y);
+    // Use CGPointMake instead of CGPointZero to avoid the unresolved linker symbol.
+    [gesture setTranslation:CGPointMake(0.0, 0.0) inView:self.view];
 }
 
 - (UIButton *)button:(NSString *)title frame:(CGRect)frame action:(SEL)action {
@@ -79,6 +82,7 @@ static NSString * const DBZalo = @"0854582858";
 
 - (void)showLogin {
     for (UIView *v in self.contentView.subviews) [v removeFromSuperview];
+
     UILabel *hint = [[UILabel alloc] initWithFrame:CGRectMake(4,12,284,34)];
     hint.text = @"Nhập VIP Key để tiếp tục";
     hint.textColor = UIColor.whiteColor;
@@ -93,10 +97,12 @@ static NSString * const DBZalo = @"0854582858";
     self.keyField.autocapitalizationType = UITextAutocapitalizationTypeAllCharacters;
     self.keyField.borderStyle = UITextBorderStyleRoundedRect;
     self.keyField.backgroundColor = [UIColor colorWithWhite:1 alpha:.10];
-    self.keyField.attributedPlaceholder = [[NSAttributedString alloc] initWithString:@"DB-XXXX-XXXX" attributes:@{NSForegroundColorAttributeName:[UIColor colorWithWhite:1 alpha:.55]}];
+    self.keyField.attributedPlaceholder = [[NSAttributedString alloc] initWithString:@"DB-XXXX-XXXX"
+        attributes:@{NSForegroundColorAttributeName:[UIColor colorWithWhite:1 alpha:.55]}];
     [self.contentView addSubview:self.keyField];
 
     [self button:@"XÁC NHẬN KEY" frame:CGRectMake(8,128,276,46) action:@selector(validateKey)];
+
     self.statusLabel = [[UILabel alloc] initWithFrame:CGRectMake(8,184,276,44)];
     self.statusLabel.text = @"Kết nối máy chủ để xác thực";
     self.statusLabel.textColor = [UIColor colorWithWhite:1 alpha:.7];
@@ -108,30 +114,57 @@ static NSString * const DBZalo = @"0854582858";
 
 - (void)validateKey {
     NSString *key = [self.keyField.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-    if (key.length < 5) { self.statusLabel.text = @"Vui lòng nhập key hợp lệ."; return; }
+    if (key.length < 5) {
+        self.statusLabel.text = @"Vui lòng nhập key hợp lệ.";
+        return;
+    }
+
     if ([DBLicenseEndpoint containsString:@"YOUR-DOMAIN"]) {
         self.statusLabel.text = @"Chưa cấu hình API server trong DoxBon.dylib.m";
         return;
     }
+
     self.statusLabel.text = @"Đang xác thực...";
     NSURL *url = [NSURL URLWithString:DBLicenseEndpoint];
+    if (!url) {
+        self.statusLabel.text = @"Địa chỉ API server không hợp lệ.";
+        return;
+    }
+
     NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:url];
     req.HTTPMethod = @"POST";
     req.timeoutInterval = 15;
     [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
-    NSDictionary *payload = @{@"key":key, @"device_id":UIDevice.currentDevice.identifierForVendor.UUIDString ?: @"unknown"};
-    req.HTTPBody = [NSJSONSerialization dataWithJSONObject:payload options:0 error:nil];
+
+    NSString *deviceID = UIDevice.currentDevice.identifierForVendor.UUIDString ?: @"unknown";
+    NSDictionary *payload = @{@"key":key, @"device_id":deviceID};
+    NSError *serializationError = nil;
+    req.HTTPBody = [NSJSONSerialization dataWithJSONObject:payload options:0 error:&serializationError];
+    if (serializationError || !req.HTTPBody) {
+        self.statusLabel.text = @"Không thể tạo yêu cầu xác thực.";
+        return;
+    }
+
     [[[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-        NSDictionary *json = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
-        BOOL valid = !error && [json[@"valid"] respondsToSelector:@selector(boolValue)] && [json[@"valid"] boolValue];
+        NSDictionary *json = nil;
+        if (data) {
+            id object = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+            if ([object isKindOfClass:NSDictionary.class]) json = (NSDictionary *)object;
+        }
+
+        BOOL valid = !error &&
+            [json[@"valid"] respondsToSelector:@selector(boolValue)] &&
+            [json[@"valid"] boolValue];
+
         dispatch_async(dispatch_get_main_queue(), ^{
             if (valid) {
                 self.activeKey = key;
-                NSString *expiry = [json[@"expires_at"] isKindOfClass:NSString.class] ? json[@"expires_at"] : @"Không xác định";
+                self.expiryText = [json[@"expires_at"] isKindOfClass:NSString.class] ? json[@"expires_at"] : @"Không xác định";
                 self.expiryDate = nil;
-                [self showDashboardWithExpiry:expiry];
+                [self showDashboardWithExpiry:self.expiryText];
             } else {
-                self.statusLabel.text = error ? @"Không kết nối được máy chủ." : (json[@"message"] ?: @"Key không hợp lệ hoặc đã hết hạn.");
+                NSString *message = [json[@"message"] isKindOfClass:NSString.class] ? json[@"message"] : @"Key không hợp lệ hoặc đã hết hạn.";
+                self.statusLabel.text = error ? @"Không kết nối được máy chủ." : message;
             }
         });
     }] resume];
@@ -139,23 +172,36 @@ static NSString * const DBZalo = @"0854582858";
 
 - (void)showDashboardWithExpiry:(NSString *)expiry {
     for (UIView *v in self.contentView.subviews) [v removeFromSuperview];
+
     [self button:@"CHỨC NĂNG" frame:CGRectMake(0,0,140,38) action:@selector(showFeatures)];
     [self button:@"CÀI ĐẶT" frame:CGRectMake(150,0,140,38) action:@selector(showSettings)];
+
     UILabel *welcome = [[UILabel alloc] initWithFrame:CGRectMake(0,54,290,42)];
     welcome.text = @"✦  DoxBon VIP đã kích hoạt";
     welcome.textColor = [UIColor colorWithRed:.55 green:1 blue:.72 alpha:1];
     welcome.textAlignment = NSTextAlignmentCenter;
     welcome.font = [UIFont boldSystemFontOfSize:15];
     [self.contentView addSubview:welcome];
+
+    self.expiryText = expiry ?: @"Không xác định";
     [self showFeatures];
-    self.view.accessibilityHint = expiry;
 }
 
-- (void)showFeatures {
+- (void)clearDashboardContent {
     for (UIView *v in [self.contentView.subviews copy]) {
         if (v.frame.origin.y >= 48) [v removeFromSuperview];
     }
-    NSArray *items = @[@"Batch QR  ·  Quét QR hàng loạt", @"Replace Media  ·  Thay thế media", @"One-Touch Media  ·  Thao tác nhanh"];
+}
+
+- (void)showFeatures {
+    [self clearDashboardContent];
+
+    NSArray *items = @[
+        @"Batch QR  ·  Quét QR hàng loạt",
+        @"Replace Media  ·  Thay thế media",
+        @"One-Touch Media  ·  Thao tác nhanh"
+    ];
+
     CGFloat y = 58;
     for (NSString *item in items) {
         UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(5,y,280,48)];
@@ -169,6 +215,7 @@ static NSString * const DBZalo = @"0854582858";
         [self.contentView addSubview:label];
         y += 58;
     }
+
     UILabel *note = [[UILabel alloc] initWithFrame:CGRectMake(5,238,280,28)];
     note.text = @"Giao diện tính năng mẫu — cần tích hợp logic riêng";
     note.textColor = [UIColor colorWithWhite:1 alpha:.55];
@@ -178,13 +225,15 @@ static NSString * const DBZalo = @"0854582858";
 }
 
 - (void)showSettings {
-    for (UIView *v in [self.contentView.subviews copy]) {
-        if (v.frame.origin.y >= 48) [v removeFromSuperview];
-    }
-    NSArray *lines = @[[NSString stringWithFormat:@"TikTok: %@", DBTikTok],
-                       [NSString stringWithFormat:@"Zalo: %@", DBZalo],
-                       @"Hạn sử dụng: xem phản hồi API server",
-                       [NSString stringWithFormat:@"Key: %@", [self maskedKey]]];
+    [self clearDashboardContent];
+
+    NSArray *lines = @[
+        [NSString stringWithFormat:@"TikTok: %@", DBTikTok],
+        [NSString stringWithFormat:@"Zalo: %@", DBZalo],
+        [NSString stringWithFormat:@"Hạn sử dụng: %@", self.expiryText ?: @"Không xác định"],
+        [NSString stringWithFormat:@"Key: %@", [self maskedKey]]
+    ];
+
     CGFloat y = 58;
     for (NSString *line in lines) {
         UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(5,y,280,34)];
@@ -194,40 +243,74 @@ static NSString * const DBZalo = @"0854582858";
         [self.contentView addSubview:label];
         y += 38;
     }
+
     [self button:@"KIỂM TRA KEY LẠI" frame:CGRectMake(5,218,135,38) action:@selector(recheckKey)];
     [self button:@"ĐĂNG XUẤT" frame:CGRectMake(150,218,135,38) action:@selector(logout)];
 }
 
 - (NSString *)maskedKey {
     if (self.activeKey.length < 7) return @"••••••";
-    return [NSString stringWithFormat:@"%@••••%@", [self.activeKey substringToIndex:3], [self.activeKey substringFromIndex:self.activeKey.length-3]];
+    return [NSString stringWithFormat:@"%@••••%@",
+            [self.activeKey substringToIndex:3],
+            [self.activeKey substringFromIndex:self.activeKey.length-3]];
 }
-- (void)recheckKey { self.keyField.text = self.activeKey; [self validateKey]; }
-- (void)logout { self.activeKey = nil; [self showLogin]; }
-- (void)closeMenu { [self.view removeFromSuperview]; [self removeFromParentViewController]; }
+
+- (void)recheckKey {
+    NSString *key = self.activeKey;
+    if (key.length == 0) {
+        [self showLogin];
+        return;
+    }
+
+    [self showLogin];
+    self.keyField.text = key;
+    [self validateKey];
+}
+
+- (void)logout {
+    self.activeKey = nil;
+    self.expiryText = nil;
+    [self showLogin];
+}
+
+- (void)closeMenu {
+    [self.view removeFromSuperview];
+    [self removeFromParentViewController];
+}
 
 @end
 
 static UIWindow *DBWindow;
+
 static void DBPresentMenu(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
         if (DBWindow && DBWindow.rootViewController) return;
+
         UIWindowScene *scene = nil;
         for (UIScene *s in UIApplication.sharedApplication.connectedScenes) {
-            if (s.activationState == UISceneActivationStateForegroundActive && [s isKindOfClass:UIWindowScene.class]) { scene = (UIWindowScene *)s; break; }
+            if (s.activationState == UISceneActivationStateForegroundActive &&
+                [s isKindOfClass:UIWindowScene.class]) {
+                scene = (UIWindowScene *)s;
+                break;
+            }
         }
+
         if (!scene) return;
+
         DBWindow = [[UIWindow alloc] initWithWindowScene:scene];
         DBWindow.frame = scene.coordinateSpace.bounds;
         DBWindow.windowLevel = UIWindowLevelAlert - 1;
+
         UIViewController *root = [UIViewController new];
         root.view.backgroundColor = UIColor.clearColor;
         DBWindow.rootViewController = root;
+
         DBMenuController *menu = [DBMenuController new];
         [root addChildViewController:menu];
         menu.view.frame = root.view.bounds;
         [root.view addSubview:menu.view];
         [menu didMoveToParentViewController:root];
+
         DBWindow.hidden = NO;
     });
 }
@@ -235,9 +318,14 @@ static void DBPresentMenu(void) {
 __attribute__((constructor))
 static void DoxBonLoad(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
-        [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *n) {
-            DBPresentMenu();
-        }];
+        [[NSNotificationCenter defaultCenter]
+            addObserverForName:UIApplicationDidBecomeActiveNotification
+            object:nil
+            queue:NSOperationQueue.mainQueue
+            usingBlock:^(__unused NSNotification *n) {
+                DBPresentMenu();
+            }];
+
         DBPresentMenu();
     });
 }
