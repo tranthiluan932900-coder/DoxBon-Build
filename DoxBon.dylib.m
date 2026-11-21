@@ -12,9 +12,24 @@ static NSString * const DBZalo = @"0854582858";
 @property(nonatomic,strong) NSDate *expiryDate;
 @property(nonatomic,strong) UIView *contentView;
 @property(nonatomic,strong) NSString *expiryText;
+@property(nonatomic,strong) UIButton *floatingButton;
+@end
+
+@interface DBPassthroughView : UIView
+@end
+
+@implementation DBPassthroughView
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIView *hit = [super hitTest:point withEvent:event];
+    return hit == self ? nil : hit;
+}
 @end
 
 @implementation DBMenuController
+
+- (void)loadView {
+    self.view = [[DBPassthroughView alloc] initWithFrame:UIScreen.mainScreen.bounds];
+}
 
 - (void)viewDidLoad {
     [super viewDidLoad];
@@ -55,6 +70,23 @@ static NSString * const DBZalo = @"0854582858";
 
     self.contentView = [[UIView alloc] initWithFrame:CGRectMake(14,55,292,290)];
     [self.panel addSubview:self.contentView];
+
+    // Floating launcher remains available after the panel is closed.
+    self.floatingButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.floatingButton.frame = CGRectMake(18, 115, 58, 58);
+    self.floatingButton.layer.cornerRadius = 29;
+    self.floatingButton.backgroundColor = [UIColor colorWithRed:.28 green:.10 blue:.48 alpha:.96];
+    self.floatingButton.layer.borderWidth = 1.5;
+    self.floatingButton.layer.borderColor = [UIColor colorWithRed:.72 green:.40 blue:1 alpha:1].CGColor;
+    self.floatingButton.layer.shadowColor = UIColor.purpleColor.CGColor;
+    self.floatingButton.layer.shadowOpacity = .65;
+    self.floatingButton.layer.shadowRadius = 10;
+    [self.floatingButton setTitle:@"DB" forState:UIControlStateNormal];
+    [self.floatingButton setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
+    self.floatingButton.titleLabel.font = [UIFont boldSystemFontOfSize:17];
+    [self.floatingButton addTarget:self action:@selector(openMenu) forControlEvents:UIControlEventTouchUpInside];
+    [self.view addSubview:self.floatingButton];
+    self.floatingButton.hidden = YES;
 }
 
 - (void)dragPanel:(UIPanGestureRecognizer *)gesture {
@@ -273,9 +305,14 @@ static NSString * const DBZalo = @"0854582858";
     [self showLogin];
 }
 
+- (void)openMenu {
+    self.panel.hidden = NO;
+    self.floatingButton.hidden = YES;
+}
+
 - (void)closeMenu {
-    [self.view removeFromSuperview];
-    [self removeFromParentViewController];
+    self.panel.hidden = YES;
+    self.floatingButton.hidden = NO;
 }
 
 @end
