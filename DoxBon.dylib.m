@@ -184,12 +184,13 @@ static NSString * const DBZalo = @"0854582858";
 
 - (void)validateKey {
     NSString *rawKey = self.keyField.text;
-if (rawKey == nil) {
-    rawKey = @"";
-}
-NSString *key = [rawKey stringByTrimmingCharactersInSet:
-    [NSCharacterSet whitespaceAndNewlineCharacterSet]] uppercaseString];
-    
+    if (rawKey == nil) {
+        rawKey = @"";
+    }
+
+    NSString *trimmedKey = [rawKey stringByTrimmingCharactersInSet:
+        [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    NSString *key = [trimmedKey uppercaseString];
     if (key.length < 8) {
         self.statusLabel.text = @"Vui lòng nhập VIP Key hợp lệ.";
         return;
