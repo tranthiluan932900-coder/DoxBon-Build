@@ -1,3 +1,5 @@
+#import <CoreGraphics/CoreGraphics.h>
+#import <QuartzCore/QuartzCore.h>
 #import <UIKit/UIKit.h>
 #import <PhotosUI/PhotosUI.h>
 #import <Vision/Vision.h>
