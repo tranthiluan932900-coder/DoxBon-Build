@@ -1,11 +1,10 @@
-
 name: Build DoxBon iOS Library
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -13,21 +12,26 @@ permissions:
 jobs:
   build:
     name: Build DoxBon dylib
-    runs-on: macos-15
+    runs-on: macos-15-intel
+    timeout-minutes: 30
 
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
+
+      - name: Check build environment
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          clang --version
 
       - name: Build DoxBon
         shell: bash
         run: |
           set -euo pipefail
 
-          test -f DoxBon.dylib.m || {
-            echo "ERROR: Missing DoxBon.dylib.m"
-            exit 1
-          }
+          test -f DoxBon.dylib.m
 
           SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
 
@@ -47,6 +51,7 @@ jobs:
             -framework MobileCoreServices \
             -o build/DoxBon.dylib
 
+          test -s build/DoxBon.dylib
           file build/DoxBon.dylib
 
       - name: Upload DoxBon dylib
@@ -55,3 +60,4 @@ jobs:
           name: DoxBon-iOS
           path: build/DoxBon.dylib
           if-no-files-found: error
+          retention-days: 7
