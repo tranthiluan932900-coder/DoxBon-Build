@@ -46,6 +46,8 @@ jobs:
             DoxBon.dylib.m \
             -framework Foundation \
             -framework UIKit \
+            -framework CoreGraphics \
+            -framework QuartzCore \
             -weak_framework PhotosUI \
             -framework Vision \
             -framework MobileCoreServices \
