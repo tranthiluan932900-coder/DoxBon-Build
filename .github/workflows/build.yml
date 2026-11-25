@@ -1,15 +1,20 @@
+
 name: Build DoxBon iOS Library
 
-'on':
+on:
   push:
     branches:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
-    name: Build iOS dylib
-    runs-on: macos-15-intel
+    name: Build DoxBon dylib
+    runs-on: macos-15
+
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -18,9 +23,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -f DoxBon.dylib.m || { echo "Missing DoxBon.dylib.m in repository root"; exit 1; }
+
+          test -f DoxBon.dylib.m || {
+            echo "ERROR: Missing DoxBon.dylib.m"
+            exit 1
+          }
+
           SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+
           mkdir -p build
+
           xcrun --sdk iphoneos clang \
             -fobjc-arc \
             -dynamiclib \
@@ -30,7 +42,12 @@ jobs:
             DoxBon.dylib.m \
             -framework Foundation \
             -framework UIKit \
+            -weak_framework PhotosUI \
+            -framework Vision \
+            -framework MobileCoreServices \
             -o build/DoxBon.dylib
+
+          file build/DoxBon.dylib
 
       - name: Upload DoxBon dylib
         uses: actions/upload-artifact@v4
