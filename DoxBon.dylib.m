@@ -1,11 +1,15 @@
 #import <UIKit/UIKit.h>
+#import <PhotosUI/PhotosUI.h>
+#import <Vision/Vision.h>
+#import <MobileCoreServices/MobileCoreServices.h>
+#import <objc/runtime.h>
 
 static NSString * const DBLicenseActivateEndpoint = @"https://hhabjbw-001-site1.ktempurl.com/api/license/activate";
 static NSString * const DBLicenseValidateEndpoint = @"https://hhabjbw-001-site1.ktempurl.com/api/license/validate";
 static NSString * const DBTikTok = @"@tuatbonxyz";
 static NSString * const DBZalo = @"0854582858";
 
-@interface DBMenuController : UIViewController
+@interface DBMenuController : UIViewController <PHPickerViewControllerDelegate, UIImagePickerControllerDelegate, UINavigationControllerDelegate>
 @property(nonatomic,strong) UIView *panel;
 @property(nonatomic,strong) UITextField *keyField;
 @property(nonatomic,strong) UILabel *statusLabel;
@@ -268,32 +272,130 @@ static NSString * const DBZalo = @"0854582858";
 - (void)showFeatures {
     [self clearDashboardContent];
 
-    NSArray *items = @[
-        @"Batch QR  ·  Quét QR hàng loạt",
-        @"Replace Media  ·  Thay thế media",
-        @"One-Touch Media  ·  Thao tác nhanh"
-    ];
+    [self button:@"BATCH QR  ·  Quét QR từ nhiều ảnh" frame:CGRectMake(5,58,280,48) action:@selector(startBatchQR)];
+    [self button:@"REPLACE MEDIA  ·  Chọn media thay thế" frame:CGRectMake(5,116,280,48) action:@selector(startReplaceMedia)];
+    [self button:@"ONE-TOUCH MEDIA  ·  Chọn media nhanh" frame:CGRectMake(5,174,280,48) action:@selector(startOneTouchMedia)];
 
-    CGFloat y = 58;
-    for (NSString *item in items) {
-        UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(5,y,280,48)];
-        label.text = item;
-        label.textColor = UIColor.whiteColor;
-        label.backgroundColor = [UIColor colorWithWhite:1 alpha:.08];
-        label.layer.cornerRadius = 10;
-        label.clipsToBounds = YES;
-        label.textAlignment = NSTextAlignmentCenter;
-        label.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
-        [self.contentView addSubview:label];
-        y += 58;
-    }
-
-    UILabel *note = [[UILabel alloc] initWithFrame:CGRectMake(5,238,280,28)];
-    note.text = @"Giao diện tính năng mẫu — cần tích hợp logic riêng";
-    note.textColor = [UIColor colorWithWhite:1 alpha:.55];
+    UILabel *note = [[UILabel alloc] initWithFrame:CGRectMake(5,232,280,42)];
+    note.text = @"Batch QR quét mã QR trong ảnh đã chọn. Chọn media mở thư viện; việc thay asset trong project cần API nội bộ Video Star.";
+    note.textColor = [UIColor colorWithWhite:1 alpha:.62];
     note.font = [UIFont systemFontOfSize:10];
+    note.numberOfLines = 3;
     note.textAlignment = NSTextAlignmentCenter;
     [self.contentView addSubview:note];
+}
+
+- (void)presentPhotoPickerAllowingMultiple:(BOOL)multiple purpose:(NSString *)purpose {
+    if (@available(iOS 14.0, *)) {
+        PHPickerConfiguration *config = [[PHPickerConfiguration alloc] init];
+        config.filter = PHPickerFilter.images;
+        config.selectionLimit = multiple ? 30 : 1;
+        PHPickerViewController *picker = [[PHPickerViewController alloc] initWithConfiguration:config];
+        picker.delegate = self;
+        objc_setAssociatedObject(picker, @selector(picker:didFinishPicking:), purpose, OBJC_ASSOCIATION_COPY_NONATOMIC);
+        [self presentViewController:picker animated:YES completion:nil];
+    } else {
+        UIImagePickerController *picker = [UIImagePickerController new];
+        picker.sourceType = UIImagePickerControllerSourceTypePhotoLibrary;
+        picker.mediaTypes = @[(NSString *)kUTTypeImage, (NSString *)kUTTypeMovie];
+        picker.delegate = self;
+        [self presentViewController:picker animated:YES completion:nil];
+    }
+}
+
+- (void)startBatchQR {
+    [self presentPhotoPickerAllowingMultiple:YES purpose:@"qr"];
+}
+
+- (void)startReplaceMedia {
+    [self presentPhotoPickerAllowingMultiple:NO purpose:@"replace"];
+}
+
+- (void)startOneTouchMedia {
+    [self presentPhotoPickerAllowingMultiple:NO purpose:@"quick"];
+}
+
+- (void)picker:(PHPickerViewController *)picker didFinishPicking:(NSArray<PHPickerResult *> *)results API_AVAILABLE(ios(14.0)) {
+    NSString *purpose = objc_getAssociatedObject(picker, @selector(picker:didFinishPicking:));
+    [picker dismissViewControllerAnimated:YES completion:^{
+        if (results.count == 0) return;
+        if ([purpose isEqualToString:@"qr"]) {
+            [self scanQRFromPickerResults:results index:0 collected:[NSMutableArray array]];
+        } else {
+            NSItemProvider *provider = results.firstObject.itemProvider;
+            if ([provider canLoadObjectOfClass:UIImage.class]) {
+                [provider loadObjectOfClass:UIImage.class completionHandler:^(id<NSItemProviderReading> object, NSError *error) {
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        if (error || ![object isKindOfClass:UIImage.class]) {
+                            [self showMessage:@"Không thể đọc ảnh đã chọn."];
+                            return;
+                        }
+                        UIImage *image = (UIImage *)object;
+                        NSString *message = [purpose isEqualToString:@"replace"]
+                            ? @"Đã chọn media. Video Star không cung cấp API project/asset trong source hiện tại, nên chưa thể tự thay clip trong timeline."
+                            : @"Đã chọn media thành công. Bạn có thể tiếp tục thao tác trong Video Star; source hiện chưa có API để tự chèn asset vào project.";
+                        [self showImage:image message:message];
+                    });
+                }];
+            } else {
+                [self showMessage:@"Định dạng đã chọn chưa được hỗ trợ trong bản này."];
+            }
+        }
+    }];
+}
+
+- (void)scanQRFromPickerResults:(NSArray<PHPickerResult *> *)results index:(NSUInteger)index collected:(NSMutableArray<NSString *> *)codes API_AVAILABLE(ios(14.0)) {
+    if (index >= results.count) {
+        NSString *message = codes.count ? [codes componentsJoinedByString:@"\n\n"] : @"Không tìm thấy mã QR trong các ảnh đã chọn.";
+        [self showMessage:[NSString stringWithFormat:@"Đã quét %lu ảnh.\n\n%@", (unsigned long)results.count, message]];
+        return;
+    }
+    NSItemProvider *provider = results[index].itemProvider;
+    if (![provider canLoadObjectOfClass:UIImage.class]) {
+        [self scanQRFromPickerResults:results index:index+1 collected:codes];
+        return;
+    }
+    [provider loadObjectOfClass:UIImage.class completionHandler:^(id<NSItemProviderReading> object, NSError *error) {
+        if (!error && [object isKindOfClass:UIImage.class]) {
+            UIImage *image = (UIImage *)object;
+            VNDetectBarcodesRequest *request = [VNDetectBarcodesRequest new];
+            request.symbologies = @[VNBarcodeSymbologyQR];
+            VNImageRequestHandler *handler = [[VNImageRequestHandler alloc] initWithCGImage:image.CGImage options:@{}];
+            [handler performRequests:@[request] error:nil];
+            for (VNBarcodeObservation *item in request.results) {
+                if (item.payloadStringValue.length) [codes addObject:item.payloadStringValue];
+            }
+        }
+        [self scanQRFromPickerResults:results index:index+1 collected:codes];
+    }];
+}
+
+- (void)imagePickerControllerDidCancel:(UIImagePickerController *)picker {
+    [picker dismissViewControllerAnimated:YES completion:nil];
+}
+
+- (void)imagePickerController:(UIImagePickerController *)picker didFinishPickingMediaWithInfo:(NSDictionary<UIImagePickerControllerInfoKey,id> *)info {
+    UIImage *image = info[UIImagePickerControllerOriginalImage];
+    [picker dismissViewControllerAnimated:YES completion:^{
+        if (image) [self showImage:image message:@"Đã chọn ảnh từ thư viện. Tự động thay asset trong project cần API tương thích Video Star."];
+        else [self showMessage:@"Đã chọn media. Tự động chèn vào project chưa được hỗ trợ trong source hiện tại."];
+    }];
+}
+
+- (void)showImage:(UIImage *)image message:(NSString *)message {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"DoxBon VDS" message:message preferredStyle:UIAlertControllerStyleAlert];
+    UIImageView *preview = [[UIImageView alloc] initWithImage:image];
+    preview.contentMode = UIViewContentModeScaleAspectFit;
+    preview.frame = CGRectMake(0, 0, 250, 150);
+    [alert.view addSubview:preview];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Đóng" style:UIAlertActionStyleDefault handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
+- (void)showMessage:(NSString *)message {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"DoxBon VDS" message:message preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
 }
 
 - (void)showSettings {
@@ -385,6 +487,7 @@ static void DBPresentMenu(void) {
         DBMenuController *menu = [DBMenuController new];
         [root addChildViewController:menu];
         menu.view.frame = root.view.bounds;
+        menu.view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
         [root.view addSubview:menu.view];
         [menu didMoveToParentViewController:root];
 
