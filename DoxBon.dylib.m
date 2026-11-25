@@ -288,7 +288,7 @@ static NSString * const DBZalo = @"0854582858";
 - (void)presentPhotoPickerAllowingMultiple:(BOOL)multiple purpose:(NSString *)purpose {
     if (@available(iOS 14.0, *)) {
         PHPickerConfiguration *config = [[PHPickerConfiguration alloc] init];
-        config.filter = PHPickerFilter.images;
+        config.filter = [PHPickerFilter imagesFilter];
         config.selectionLimit = multiple ? 30 : 1;
         PHPickerViewController *picker = [[PHPickerViewController alloc] initWithConfiguration:config];
         picker.delegate = self;
