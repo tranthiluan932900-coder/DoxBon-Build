@@ -18,6 +18,12 @@ static NSString * const DBZalo = @"0854582858";
 @property(nonatomic,strong) UIView *contentView;
 @property(nonatomic,strong) NSString *expiryText;
 @property(nonatomic,strong) UIButton *floatingButton;
+@property(nonatomic,strong) UIScrollView *tabBar;
+@property(nonatomic,strong) UIScrollView *contentScroll;
+@property(nonatomic,strong) CAGradientLayer *panelGradient;
+@property(nonatomic,strong) UILabel *headerSubtitle;
+@property(nonatomic,strong) UIView *activeIndicator;
+@property(nonatomic,strong) NSArray<UIButton *> *tabButtons;
 @end
 
 @interface DBPassthroughView : UIView
@@ -26,7 +32,29 @@ static NSString * const DBZalo = @"0854582858";
 @implementation DBPassthroughView
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
     UIView *hit = [super hitTest:point withEvent:event];
+    // Outside visible controls, let the underlying Video Star window receive touches.
     return hit == self ? nil : hit;
+}
+@end
+
+// Important: the transparent root controller must not become the hit target.
+@interface DBPassthroughWindow : UIWindow
+@end
+@implementation DBPassthroughWindow
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIView *hit = [super hitTest:point withEvent:event];
+    if (hit == self.rootViewController.view) return nil;
+    return hit;
+}
+@end
+
+@interface DBRoundedPanelView : UIView
+@end
+@implementation DBRoundedPanelView
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIBezierPath *shape = [UIBezierPath bezierPathWithRoundedRect:self.bounds cornerRadius:25.0];
+    if (![shape containsPoint:point]) return nil;
+    return [super hitTest:point withEvent:event];
 }
 @end
 
@@ -44,29 +72,74 @@ static NSString * const DBZalo = @"0854582858";
 }
 
 - (void)buildPanel {
-    self.panel = [[UIView alloc] initWithFrame:CGRectMake(0,0,320,360)];
+    CGFloat screenW = CGRectGetWidth(UIScreen.mainScreen.bounds);
+    CGFloat screenH = CGRectGetHeight(UIScreen.mainScreen.bounds);
+    CGFloat panelW = MIN(350.0, screenW - 30.0);
+    CGFloat panelH = MIN(410.0, screenH - 110.0);
+    self.panel = [[DBRoundedPanelView alloc] initWithFrame:CGRectMake(0, 0, panelW, panelH)];
     self.panel.center = self.view.center;
     self.panel.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin |
                                   UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleBottomMargin;
-    self.panel.backgroundColor = [UIColor colorWithRed:0.055 green:0.035 blue:0.105 alpha:0.97];
-    self.panel.layer.cornerRadius = 22;
-    self.panel.layer.borderWidth = 1.5;
-    self.panel.layer.borderColor = [UIColor colorWithRed:0.65 green:0.28 blue:1 alpha:1].CGColor;
-    self.panel.layer.shadowColor = [UIColor purpleColor].CGColor;
-    self.panel.layer.shadowOpacity = .55;
-    self.panel.layer.shadowRadius = 18;
+    self.panel.backgroundColor = [UIColor colorWithRed:.025 green:.018 blue:.075 alpha:.985];
+    self.panel.layer.cornerRadius = 25.0;
+    self.panel.layer.borderWidth = 1.6;
+    self.panel.layer.borderColor = [UIColor colorWithRed:.67 green:.28 blue:1 alpha:1].CGColor;
+    self.panel.layer.shadowColor = [UIColor colorWithRed:.55 green:.12 blue:1 alpha:1].CGColor;
+    self.panel.layer.shadowOpacity = .62;
+    self.panel.layer.shadowRadius = 24;
+    self.panel.layer.shadowOffset = CGSizeMake(0, 8);
+    self.panel.clipsToBounds = NO;
     [self.view addSubview:self.panel];
 
-    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(18,12,240,34)];
-    title.text = @"♛  DOXBON VIP";
-    title.font = [UIFont boldSystemFontOfSize:21];
-    title.textColor = [UIColor colorWithRed:.82 green:.62 blue:1 alpha:1];
+    self.panelGradient = [CAGradientLayer layer];
+    self.panelGradient.frame = self.panel.bounds;
+    self.panelGradient.cornerRadius = 25.0;
+    self.panelGradient.colors = @[
+        (id)[UIColor colorWithRed:.12 green:.025 blue:.25 alpha:1].CGColor,
+        (id)[UIColor colorWithRed:.025 green:.025 blue:.105 alpha:1].CGColor,
+        (id)[UIColor colorWithRed:.018 green:.055 blue:.16 alpha:1].CGColor
+    ];
+    self.panelGradient.startPoint = CGPointMake(0, 0);
+    self.panelGradient.endPoint = CGPointMake(1, 1);
+    [self.panel.layer insertSublayer:self.panelGradient atIndex:0];
+
+    // Bottom neon streak, matching the reference menu artwork.
+    CAGradientLayer *streak = [CAGradientLayer layer];
+    streak.frame = CGRectMake(0, panelH-5, panelW, 5);
+    streak.colors = @[(id)[UIColor colorWithRed:.35 green:.12 blue:1 alpha:0].CGColor,
+                      (id)[UIColor colorWithRed:.72 green:.18 blue:1 alpha:1].CGColor,
+                      (id)[UIColor colorWithRed:.20 green:.48 blue:1 alpha:.85].CGColor];
+    streak.startPoint = CGPointMake(0, .5);
+    streak.endPoint = CGPointMake(1, .5);
+    streak.cornerRadius = 3;
+    [self.panel.layer addSublayer:streak];
+
+    UILabel *star = [[UILabel alloc] initWithFrame:CGRectMake(13, 13, 30, 32)];
+    star.text = @"★";
+    star.font = [UIFont systemFontOfSize:27 weight:UIFontWeightBlack];
+    star.textColor = [UIColor colorWithRed:.68 green:.25 blue:1 alpha:1];
+    [self.panel addSubview:star];
+
+    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(47, 13, panelW-100, 24)];
+    title.text = @"DOXBON / VDS TOOL";
+    title.font = [UIFont systemFontOfSize:15.5 weight:UIFontWeightHeavy];
+    title.textColor = [UIColor colorWithRed:.78 green:.48 blue:1 alpha:1];
     [self.panel addSubview:title];
 
+    self.headerSubtitle = [[UILabel alloc] initWithFrame:CGRectMake(48, 37, panelW-100, 15)];
+    self.headerSubtitle.text = @"VIP CONTROL CENTER  •  ONLINE  ●";
+    self.headerSubtitle.font = [UIFont systemFontOfSize:8.5 weight:UIFontWeightSemibold];
+    self.headerSubtitle.textColor = [UIColor colorWithWhite:1 alpha:.76];
+    [self.panel addSubview:self.headerSubtitle];
+
     UIButton *close = [UIButton buttonWithType:UIButtonTypeSystem];
-    close.frame = CGRectMake(278,10,30,30);
+    close.frame = CGRectMake(panelW-43, 14, 29, 29);
+    close.backgroundColor = [UIColor colorWithRed:.30 green:.12 blue:.55 alpha:.75];
+    close.layer.cornerRadius = 10;
+    close.layer.borderWidth = 1;
+    close.layer.borderColor = [UIColor colorWithRed:.58 green:.28 blue:1 alpha:.7].CGColor;
     [close setTitle:@"×" forState:UIControlStateNormal];
-    close.titleLabel.font = [UIFont boldSystemFontOfSize:25];
+    close.titleLabel.font = [UIFont systemFontOfSize:22 weight:UIFontWeightLight];
     [close setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
     [close addTarget:self action:@selector(closeMenu) forControlEvents:UIControlEventTouchUpInside];
     [self.panel addSubview:close];
@@ -75,25 +148,67 @@ static NSString * const DBZalo = @"0854582858";
     [title addGestureRecognizer:pan];
     title.userInteractionEnabled = YES;
 
-    self.contentView = [[UIView alloc] initWithFrame:CGRectMake(14,55,292,290)];
-    [self.panel addSubview:self.contentView];
+    self.tabBar = [[UIScrollView alloc] initWithFrame:CGRectMake(12, 58, panelW-24, 44)];
+    self.tabBar.showsHorizontalScrollIndicator = NO;
+    self.tabBar.scrollEnabled = NO;
+    self.tabBar.backgroundColor = [UIColor colorWithWhite:1 alpha:.045];
+    self.tabBar.layer.cornerRadius = 17;
+    [self.panel addSubview:self.tabBar];
 
-    // Floating launcher remains available after the panel is closed.
+    NSArray *names = @[@"⌂\nHOME", @"▦\nQR LAB", @"▷\nMEDIA", @"⚙\nSETTINGS", @"ⓘ\nINFO"];
+    NSMutableArray *buttons = [NSMutableArray array];
+    CGFloat gap = 4.0;
+    CGFloat tabW = floor((panelW-30.0-gap*4.0)/5.0);
+    for (NSUInteger i=0; i<names.count; i++) {
+        UIButton *b = [UIButton buttonWithType:UIButtonTypeSystem];
+        b.frame = CGRectMake(3 + i*(tabW+gap), 3, tabW, 38);
+        b.tag = i;
+        b.layer.cornerRadius = 14;
+        b.titleLabel.font = [UIFont systemFontOfSize:9 weight:UIFontWeightBold];
+        b.titleLabel.numberOfLines = 2;
+        b.titleLabel.textAlignment = NSTextAlignmentCenter;
+        b.titleLabel.lineBreakMode = NSLineBreakByWordWrapping;
+        b.titleLabel.adjustsFontSizeToFitWidth = YES;
+        b.titleLabel.minimumScaleFactor = .8;
+        [b setTitle:names[i] forState:UIControlStateNormal];
+        [b setTitleColor:[UIColor colorWithWhite:1 alpha:.72] forState:UIControlStateNormal];
+        [b addTarget:self action:@selector(tabPressed:) forControlEvents:UIControlEventTouchUpInside];
+        [self.tabBar addSubview:b];
+        [buttons addObject:b];
+    }
+    self.tabButtons = buttons;
+    self.tabBar.contentSize = CGSizeMake(panelW-24, 44);
+
+    self.contentScroll = [[UIScrollView alloc] initWithFrame:CGRectMake(13, 110, panelW-26, panelH-122)];
+    self.contentScroll.alwaysBounceVertical = YES;
+    self.contentScroll.showsVerticalScrollIndicator = NO;
+    self.contentScroll.keyboardDismissMode = UIScrollViewKeyboardDismissModeOnDrag;
+    [self.panel addSubview:self.contentScroll];
+    self.contentView = self.contentScroll;
+
     self.floatingButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    self.floatingButton.frame = CGRectMake(18, 115, 58, 58);
-    self.floatingButton.layer.cornerRadius = 29;
-    self.floatingButton.backgroundColor = [UIColor colorWithRed:.28 green:.10 blue:.48 alpha:.96];
-    self.floatingButton.layer.borderWidth = 1.5;
-    self.floatingButton.layer.borderColor = [UIColor colorWithRed:.72 green:.40 blue:1 alpha:1].CGColor;
-    self.floatingButton.layer.shadowColor = UIColor.purpleColor.CGColor;
-    self.floatingButton.layer.shadowOpacity = .65;
-    self.floatingButton.layer.shadowRadius = 10;
-    [self.floatingButton setTitle:@"DB" forState:UIControlStateNormal];
+    self.floatingButton.frame = CGRectMake(16, MAX(100, screenH*.32), 50, 50);
+    self.floatingButton.layer.cornerRadius = 25;
+    self.floatingButton.backgroundColor = [UIColor colorWithRed:.30 green:.08 blue:.65 alpha:.98];
+    self.floatingButton.layer.borderWidth = 1.7;
+    self.floatingButton.layer.borderColor = [UIColor colorWithRed:.78 green:.32 blue:1 alpha:1].CGColor;
+    self.floatingButton.layer.shadowColor = [UIColor colorWithRed:.68 green:.12 blue:1 alpha:1].CGColor;
+    self.floatingButton.layer.shadowOpacity = .9;
+    self.floatingButton.layer.shadowRadius = 15;
+    [self.floatingButton setTitle:@"♛\nDB" forState:UIControlStateNormal];
     [self.floatingButton setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
-    self.floatingButton.titleLabel.font = [UIFont boldSystemFontOfSize:17];
+    self.floatingButton.titleLabel.font = [UIFont systemFontOfSize:14 weight:UIFontWeightBlack];
+    self.floatingButton.titleLabel.numberOfLines = 2;
+    self.floatingButton.titleLabel.textAlignment = NSTextAlignmentCenter;
     [self.floatingButton addTarget:self action:@selector(openMenu) forControlEvents:UIControlEventTouchUpInside];
     [self.view addSubview:self.floatingButton];
     self.floatingButton.hidden = YES;
+    self.tabBar.hidden = YES;
+}
+
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+    self.panelGradient.frame = self.panel.bounds;
 }
 
 - (void)dragPanel:(UIPanGestureRecognizer *)gesture {
@@ -107,29 +222,76 @@ static NSString * const DBZalo = @"0854582858";
 - (UIButton *)button:(NSString *)title frame:(CGRect)frame action:(SEL)action {
     UIButton *b = [UIButton buttonWithType:UIButtonTypeSystem];
     b.frame = frame;
-    b.backgroundColor = [UIColor colorWithRed:.28 green:.10 blue:.48 alpha:1];
-    b.layer.cornerRadius = 12;
+    b.backgroundColor = [UIColor colorWithRed:.27 green:.075 blue:.62 alpha:.98];
+    b.layer.cornerRadius = 18;
     b.layer.borderWidth = 1;
-    b.layer.borderColor = [UIColor colorWithRed:.68 green:.38 blue:1 alpha:.8].CGColor;
+    b.layer.borderColor = [UIColor colorWithRed:.58 green:.28 blue:1 alpha:.92].CGColor;
+    b.layer.shadowColor = [UIColor colorWithRed:.48 green:.12 blue:1 alpha:1].CGColor;
+    b.layer.shadowOpacity = .28;
+    b.layer.shadowRadius = 9;
     [b setTitle:title forState:UIControlStateNormal];
     [b setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
-    b.titleLabel.font = [UIFont boldSystemFontOfSize:14];
+    b.titleLabel.font = [UIFont systemFontOfSize:10 weight:UIFontWeightBold];
+    b.titleLabel.adjustsFontSizeToFitWidth = YES;
+    b.titleLabel.minimumScaleFactor = .75;
     [b addTarget:self action:action forControlEvents:UIControlEventTouchUpInside];
     [self.contentView addSubview:b];
     return b;
 }
 
-- (void)showLogin {
-    for (UIView *v in self.contentView.subviews) [v removeFromSuperview];
+- (UILabel *)label:(NSString *)text frame:(CGRect)frame size:(CGFloat)size color:(UIColor *)color {
+    UILabel *label = [[UILabel alloc] initWithFrame:frame];
+    label.text = text;
+    label.textColor = color;
+    label.font = [UIFont systemFontOfSize:size weight:UIFontWeightMedium];
+    label.numberOfLines = 0;
+    [self.contentView addSubview:label];
+    return label;
+}
 
-    UILabel *hint = [[UILabel alloc] initWithFrame:CGRectMake(4,12,284,34)];
+- (void)updateTabSelection:(NSInteger)selected {
+    [self.tabButtons enumerateObjectsUsingBlock:^(UIButton *button, NSUInteger idx, BOOL *stop) {
+        BOOL active = ((NSInteger)idx == selected);
+        button.backgroundColor = active
+            ? [UIColor colorWithRed:.55 green:.16 blue:.92 alpha:.98]
+            : [UIColor colorWithWhite:1 alpha:.025];
+        button.layer.borderWidth = active ? 0.8 : 0.4;
+        button.layer.borderColor = active
+            ? [UIColor colorWithRed:.80 green:.42 blue:1 alpha:.95].CGColor
+            : [UIColor colorWithWhite:1 alpha:.08].CGColor;
+        button.layer.shadowColor = [UIColor colorWithRed:.62 green:.16 blue:1 alpha:1].CGColor;
+        button.layer.shadowOpacity = active ? .45 : 0;
+        button.layer.shadowRadius = active ? 9 : 0;
+        [button setTitleColor:active ? UIColor.whiteColor : [UIColor colorWithWhite:1 alpha:.66]
+                     forState:UIControlStateNormal];
+    }];
+}
+
+- (void)tabPressed:(UIButton *)sender {
+    switch (sender.tag) {
+        case 0: [self showFeatures]; break;
+        case 1: [self showQRTab]; break;
+        case 2: [self showMediaTab]; break;
+        case 3: [self showSettings]; break;
+        case 4: [self showAboutTab]; break;
+        default: break;
+    }
+}
+
+- (void)showLogin {
+    self.tabBar.hidden = YES;
+    self.headerSubtitle.text = @"LICENSE AUTHENTICATION";
+    for (UIView *v in self.contentView.subviews) [v removeFromSuperview];
+    self.contentScroll.contentSize = self.contentScroll.bounds.size;
+
+    UILabel *hint = [[UILabel alloc] initWithFrame:CGRectMake(8,24,self.contentView.bounds.size.width-16,30)];
     hint.text = @"Nhập VIP Key để tiếp tục";
     hint.textColor = UIColor.whiteColor;
     hint.textAlignment = NSTextAlignmentCenter;
-    hint.font = [UIFont systemFontOfSize:16 weight:UIFontWeightSemibold];
+    hint.font = [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold];
     [self.contentView addSubview:hint];
 
-    self.keyField = [[UITextField alloc] initWithFrame:CGRectMake(8,66,276,46)];
+    self.keyField = [[UITextField alloc] initWithFrame:CGRectMake(8,76,self.contentView.bounds.size.width-16,42)];
     self.keyField.placeholder = @"DB-XXXX-XXXX";
     self.keyField.textColor = UIColor.whiteColor;
     self.keyField.tintColor = UIColor.purpleColor;
@@ -140,9 +302,9 @@ static NSString * const DBZalo = @"0854582858";
         attributes:@{NSForegroundColorAttributeName:[UIColor colorWithWhite:1 alpha:.55]}];
     [self.contentView addSubview:self.keyField];
 
-    [self button:@"XÁC NHẬN KEY" frame:CGRectMake(8,128,276,46) action:@selector(validateKey)];
+    [self button:@"XÁC NHẬN KEY" frame:CGRectMake(8,132,self.contentView.bounds.size.width-16,42) action:@selector(validateKey)];
 
-    self.statusLabel = [[UILabel alloc] initWithFrame:CGRectMake(8,184,276,44)];
+    self.statusLabel = [[UILabel alloc] initWithFrame:CGRectMake(8,188,self.contentView.bounds.size.width-16,42)];
     self.statusLabel.text = @"Kết nối máy chủ để xác thực";
     self.statusLabel.textColor = [UIColor colorWithWhite:1 alpha:.7];
     self.statusLabel.font = [UIFont systemFontOfSize:12];
@@ -249,42 +411,127 @@ static NSString * const DBZalo = @"0854582858";
 }
 
 - (void)showDashboardWithExpiry:(NSString *)expiry {
-    for (UIView *v in self.contentView.subviews) [v removeFromSuperview];
-
-    [self button:@"CHỨC NĂNG" frame:CGRectMake(0,0,140,38) action:@selector(showFeatures)];
-    [self button:@"CÀI ĐẶT" frame:CGRectMake(150,0,140,38) action:@selector(showSettings)];
-
-    UILabel *welcome = [[UILabel alloc] initWithFrame:CGRectMake(0,54,290,42)];
-    welcome.text = @"✦  DoxBon VIP đã kích hoạt";
-    welcome.textColor = [UIColor colorWithRed:.55 green:1 blue:.72 alpha:1];
-    welcome.textAlignment = NSTextAlignmentCenter;
-    welcome.font = [UIFont boldSystemFontOfSize:15];
-    [self.contentView addSubview:welcome];
-
     self.expiryText = expiry ?: @"Không xác định";
+    self.tabBar.hidden = NO;
+    self.headerSubtitle.text = @"VIP ACCESS  •  PROTECTED SESSION";
     [self showFeatures];
 }
 
 - (void)clearDashboardContent {
-    for (UIView *v in [self.contentView.subviews copy]) {
-        if (v.frame.origin.y >= 48) [v removeFromSuperview];
-    }
+    for (UIView *v in [self.contentView.subviews copy]) [v removeFromSuperview];
+    self.contentScroll.contentOffset = CGPointZero;
+}
+
+- (void)finishContentAtY:(CGFloat)y {
+    self.contentScroll.contentSize = CGSizeMake(self.contentScroll.bounds.size.width, MAX(y+12, self.contentScroll.bounds.size.height+1));
 }
 
 - (void)showFeatures {
+    [self updateTabSelection:0];
     [self clearDashboardContent];
+    CGFloat w = self.contentView.bounds.size.width;
 
-    [self button:@"BATCH QR  ·  Quét QR từ nhiều ảnh" frame:CGRectMake(5,58,280,48) action:@selector(startBatchQR)];
-    [self button:@"REPLACE MEDIA  ·  Chọn media thay thế" frame:CGRectMake(5,116,280,48) action:@selector(startReplaceMedia)];
-    [self button:@"ONE-TOUCH MEDIA  ·  Chọn media nhanh" frame:CGRectMake(5,174,280,48) action:@selector(startOneTouchMedia)];
+    UIView *sectionMark = [[UIView alloc] initWithFrame:CGRectMake(5, 5, 4, 17)];
+    sectionMark.backgroundColor = [UIColor colorWithRed:.72 green:.24 blue:1 alpha:1];
+    sectionMark.layer.cornerRadius = 2;
+    [self.contentView addSubview:sectionMark];
+    [self label:@"CONTROL CENTER" frame:CGRectMake(14,4,w-20,19) size:10 color:[UIColor colorWithWhite:.78 alpha:1]];
+    [self label:@"Chào mừng trở lại DoxBon VIP  ♛" frame:CGRectMake(8,27,w-16,27) size:14.5 color:UIColor.whiteColor];
 
-    UILabel *note = [[UILabel alloc] initWithFrame:CGRectMake(5,232,280,42)];
-    note.text = @"Batch QR quét mã QR trong ảnh đã chọn. Chọn media mở thư viện; việc thay asset trong project cần API nội bộ Video Star.";
-    note.textColor = [UIColor colorWithWhite:1 alpha:.62];
-    note.font = [UIFont systemFontOfSize:10];
-    note.numberOfLines = 3;
-    note.textAlignment = NSTextAlignmentCenter;
-    [self.contentView addSubview:note];
+    UIView *status = [[UIView alloc] initWithFrame:CGRectMake(5,62,w-10,36)];
+    status.backgroundColor = [UIColor colorWithRed:.025 green:.20 blue:.12 alpha:.78];
+    status.layer.cornerRadius = 18;
+    status.layer.borderWidth = 1.2;
+    status.layer.borderColor = [UIColor colorWithRed:.08 green:.95 blue:.42 alpha:1].CGColor;
+    status.layer.shadowColor = [UIColor colorWithRed:.02 green:.9 blue:.35 alpha:1].CGColor;
+    status.layer.shadowOpacity = .22;
+    status.layer.shadowRadius = 8;
+    [self.contentView addSubview:status];
+    UILabel *st = [[UILabel alloc] initWithFrame:CGRectMake(12,0,status.bounds.size.width-24,36)];
+    st.text = [NSString stringWithFormat:@"●  VIP ACTIVE  •  %@                         ♛", self.expiryText ?: @"Vĩnh viễn"];
+    st.font = [UIFont systemFontOfSize:10.5 weight:UIFontWeightBold];
+    st.textColor = [UIColor colorWithRed:.48 green:1 blue:.68 alpha:1];
+    st.adjustsFontSizeToFitWidth = YES;
+    st.minimumScaleFactor = .78;
+    [status addSubview:st];
+
+    UIView *quickMark = [[UIView alloc] initWithFrame:CGRectMake(5,110,4,17)];
+    quickMark.backgroundColor = [UIColor colorWithRed:.72 green:.24 blue:1 alpha:1];
+    quickMark.layer.cornerRadius = 2;
+    [self.contentView addSubview:quickMark];
+    [self label:@"QUICK TOOLS" frame:CGRectMake(14,109,w-20,19) size:10 color:[UIColor colorWithWhite:.78 alpha:1]];
+
+    CGFloat gap = 7;
+    CGFloat cardW = (w-17-gap)/2.0;
+    [self button:@"▦   BATCH QR     ›" frame:CGRectMake(5,134,cardW,43) action:@selector(startBatchQR)];
+    [self button:@"▧   REPLACE MEDIA  ›" frame:CGRectMake(12+cardW,134,cardW,43) action:@selector(startReplaceMedia)];
+    [self button:@"✦   ONE-TOUCH    ›" frame:CGRectMake(5,184,cardW,43) action:@selector(startOneTouchMedia)];
+    [self button:@"⚙   SETTINGS     ›" frame:CGRectMake(12+cardW,184,cardW,43) action:@selector(showSettings)];
+
+    UILabel *tip = [self label:@"ⓘ  QR LAB có thể quét nhiều ảnh đã chọn\nvà công cụ media hiện chỉ chọn ảnh." frame:CGRectMake(12,237,w-24,38) size:9.5 color:[UIColor colorWithWhite:.70 alpha:1]];
+    tip.numberOfLines = 2;
+    [self finishContentAtY:282];
+}
+
+- (void)showQRTab {
+    [self updateTabSelection:1];
+    [self clearDashboardContent];
+    CGFloat w = self.contentView.bounds.size.width;
+    [self label:@"QR LAB" frame:CGRectMake(5,5,w-10,23) size:16 color:[UIColor colorWithRed:.75 green:.56 blue:1 alpha:1]];
+    [self label:@"Quét mã QR từ nhiều ảnh trong thư viện." frame:CGRectMake(5,32,w-10,32) size:10 color:[UIColor colorWithWhite:1 alpha:.65]];
+    [self button:@"▦  CHỌN NHIỀU ẢNH ĐỂ QUÉT QR" frame:CGRectMake(5,78,w-10,48) action:@selector(startBatchQR)];
+    [self label:@"Hỗ trợ tối đa 30 ảnh mỗi lượt. Kết quả được hiển thị sau khi Vision xử lý xong." frame:CGRectMake(7,139,w-14,48) size:9 color:[UIColor colorWithWhite:1 alpha:.50]];
+    [self finishContentAtY:205];
+}
+
+- (void)showMediaTab {
+    [self updateTabSelection:2];
+    [self clearDashboardContent];
+    CGFloat w = self.contentView.bounds.size.width;
+    [self label:@"MEDIA TOOLS" frame:CGRectMake(5,5,w-10,23) size:16 color:[UIColor colorWithRed:.48 green:.82 blue:1 alpha:1]];
+    [self label:@"Chọn ảnh để chuẩn bị thao tác. Hai nút dưới đây chưa tự sửa timeline Video Star." frame:CGRectMake(5,32,w-10,42) size:9 color:[UIColor colorWithWhite:1 alpha:.60]];
+    [self button:@"▧  REPLACE MEDIA  /  CHỌN ẢNH" frame:CGRectMake(5,88,w-10,48) action:@selector(startReplaceMedia)];
+    [self button:@"✦  ONE-TOUCH MEDIA  /  CHỌN NHANH" frame:CGRectMake(5,148,w-10,48) action:@selector(startOneTouchMedia)];
+    [self finishContentAtY:215];
+}
+
+- (void)showSettings {
+    [self updateTabSelection:3];
+    [self clearDashboardContent];
+    CGFloat w = self.contentView.bounds.size.width;
+    [self label:@"SETTINGS" frame:CGRectMake(5,5,w-10,23) size:16 color:[UIColor colorWithRed:.75 green:.56 blue:1 alpha:1]];
+    NSArray *lines = @[
+        [NSString stringWithFormat:@"TikTok     %@", DBTikTok],
+        [NSString stringWithFormat:@"Zalo        %@", DBZalo],
+        [NSString stringWithFormat:@"Expires    %@", self.expiryText ?: @"Không xác định"],
+        [NSString stringWithFormat:@"License    %@", [self maskedKey]]
+    ];
+    CGFloat y=42;
+    for (NSString *line in lines) {
+        UIView *row = [[UIView alloc] initWithFrame:CGRectMake(5,y,w-10,34)];
+        row.backgroundColor = [UIColor colorWithWhite:1 alpha:.055];
+        row.layer.cornerRadius = 8;
+        [self.contentView addSubview:row];
+        UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(9,0,row.bounds.size.width-18,34)];
+        label.text = line;
+        label.textColor = UIColor.whiteColor;
+        label.font = [UIFont systemFontOfSize:10 weight:UIFontWeightMedium];
+        [row addSubview:label];
+        y += 41;
+    }
+    [self button:@"CHECK KEY" frame:CGRectMake(5,y+8,(w-18)/2,40) action:@selector(recheckKey)];
+    [self button:@"LOG OUT" frame:CGRectMake(13+(w-18)/2,y+8,(w-18)/2,40) action:@selector(logout)];
+    [self finishContentAtY:y+62];
+}
+
+- (void)showAboutTab {
+    [self updateTabSelection:4];
+    [self clearDashboardContent];
+    CGFloat w = self.contentView.bounds.size.width;
+    [self label:@"DOXBON VDS TOOL" frame:CGRectMake(5,5,w-10,24) size:16 color:[UIColor colorWithRed:.80 green:.60 blue:1 alpha:1]];
+    [self label:@"PURPLE NEON EDITION  •  BUILD 1.4" frame:CGRectMake(5,33,w-10,18) size:9 color:[UIColor colorWithWhite:1 alpha:.52]];
+    [self label:@"Developer support\nTikTok: @tuatbonxyz\nZalo: 0854582858\n\nTouch passthrough: enabled\nQR engine: Apple Vision\nMedia timeline automation: requires supported Video Star project API." frame:CGRectMake(7,65,w-14,145) size:10 color:[UIColor colorWithWhite:1 alpha:.78]];
+    [self finishContentAtY:225];
 }
 
 - (void)presentPhotoPickerAllowingMultiple:(BOOL)multiple purpose:(NSString *)purpose {
@@ -350,7 +597,8 @@ static NSString * const DBZalo = @"0854582858";
 - (void)scanQRFromPickerResults:(NSArray<PHPickerResult *> *)results index:(NSUInteger)index collected:(NSMutableArray<NSString *> *)codes API_AVAILABLE(ios(14.0)) {
     if (index >= results.count) {
         NSString *message = codes.count ? [codes componentsJoinedByString:@"\n\n"] : @"Không tìm thấy mã QR trong các ảnh đã chọn.";
-        [self showMessage:[NSString stringWithFormat:@"Đã quét %lu ảnh.\n\n%@", (unsigned long)results.count, message]];
+        NSString *summary = [NSString stringWithFormat:@"Đã quét %lu ảnh.\nTìm thấy %lu mã QR.\n\n%@", (unsigned long)results.count, (unsigned long)codes.count, message];
+        dispatch_async(dispatch_get_main_queue(), ^{ [self showMessage:summary]; });
         return;
     }
     NSItemProvider *provider = results[index].itemProvider;
@@ -366,9 +614,7 @@ static NSString * const DBZalo = @"0854582858";
             VNImageRequestHandler *handler = [[VNImageRequestHandler alloc] initWithCGImage:image.CGImage options:@{}];
             [handler performRequests:@[request] error:nil];
             for (VNBarcodeObservation *item in request.results) {
-                if (item.payloadStringValue.length && ![codes containsObject:item.payloadStringValue]) {
-                    [codes addObject:item.payloadStringValue];
-                }
+                if (item.payloadStringValue.length && ![codes containsObject:item.payloadStringValue]) [codes addObject:item.payloadStringValue];
             }
         }
         [self scanQRFromPickerResults:results index:index+1 collected:codes];
@@ -383,39 +629,28 @@ static NSString * const DBZalo = @"0854582858";
     NSString *purpose = objc_getAssociatedObject(picker, @selector(picker:didFinishPicking:));
     UIImage *image = info[UIImagePickerControllerOriginalImage];
     [picker dismissViewControllerAnimated:YES completion:^{
-        if (!image) {
-            [self showMessage:@"Không đọc được ảnh đã chọn. Bản hiện tại chỉ xử lý ảnh; chưa tự chèn video vào project Video Star."];
-            return;
-        }
-        if ([purpose isEqualToString:@"qr"]) {
+        if (image && [purpose isEqualToString:@"qr"]) {
             VNDetectBarcodesRequest *request = [VNDetectBarcodesRequest new];
             request.symbologies = @[VNBarcodeSymbologyQR];
             VNImageRequestHandler *handler = [[VNImageRequestHandler alloc] initWithCGImage:image.CGImage options:@{}];
-            NSError *error = nil;
-            [handler performRequests:@[request] error:&error];
-            NSMutableArray<NSString *> *codes = [NSMutableArray array];
-            for (VNBarcodeObservation *item in request.results) {
-                if (item.payloadStringValue.length && ![codes containsObject:item.payloadStringValue]) {
-                    [codes addObject:item.payloadStringValue];
-                }
-            }
-            NSString *result = error ? @"Không thể quét QR trong ảnh." :
-                (codes.count ? [codes componentsJoinedByString:@"\\n\\n"] : @"Không tìm thấy mã QR.");
-            [self showMessage:result];
-        } else {
+            [handler performRequests:@[request] error:nil];
+            NSMutableArray *values = [NSMutableArray array];
+            for (VNBarcodeObservation *item in request.results) if (item.payloadStringValue.length) [values addObject:item.payloadStringValue];
+            [self showMessage:values.count ? [values componentsJoinedByString:@"\n\n"] : @"Không tìm thấy mã QR."];
+        } else if (image) {
             NSString *message = [purpose isEqualToString:@"replace"]
-                ? @"Đã chọn ảnh. Tự động thay asset trong timeline cần API project của Video Star."
-                : @"Đã chọn ảnh. Tự động chèn vào project cần API project của Video Star.";
+                ? @"Đã chọn ảnh. Tự động thay asset trong timeline cần API project Video Star."
+                : @"Đã chọn ảnh. Tự động chèn vào timeline cần API project Video Star.";
             [self showImage:image message:message];
+        } else {
+            [self showMessage:@"Không đọc được ảnh đã chọn."];
         }
     }];
 }
 
 - (void)showImage:(UIImage *)image message:(NSString *)message {
-    CGSize size = image.size;
-    NSString *details = [NSString stringWithFormat:@"%@\\n\\nKích thước ảnh: %.0f × %.0f px",
-                         message, size.width * image.scale, size.height * image.scale];
-    [self showMessage:details];
+    CGSize px = CGSizeMake(image.size.width * image.scale, image.size.height * image.scale);
+    [self showMessage:[NSString stringWithFormat:@"%@\n\nImage: %.0f × %.0f px", message, px.width, px.height]];
 }
 
 - (void)showMessage:(NSString *)message {
@@ -425,37 +660,12 @@ static NSString * const DBZalo = @"0854582858";
         while (presenter.presentedViewController && !presenter.presentedViewController.isBeingDismissed) {
             presenter = presenter.presentedViewController;
         }
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"DoxBon VDS"
-                                                                       message:message
-                                                                preferredStyle:UIAlertControllerStyleAlert];
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"DOXBON VDS" message:message preferredStyle:UIAlertControllerStyleAlert];
         [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
         [presenter presentViewController:alert animated:YES completion:nil];
     });
 }
 
-- (void)showSettings {
-    [self clearDashboardContent];
-
-    NSArray *lines = @[
-        [NSString stringWithFormat:@"TikTok: %@", DBTikTok],
-        [NSString stringWithFormat:@"Zalo: %@", DBZalo],
-        [NSString stringWithFormat:@"Hạn sử dụng: %@", self.expiryText ?: @"Không xác định"],
-        [NSString stringWithFormat:@"Key: %@", [self maskedKey]]
-    ];
-
-    CGFloat y = 58;
-    for (NSString *line in lines) {
-        UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(5,y,280,34)];
-        label.text = line;
-        label.textColor = UIColor.whiteColor;
-        label.font = [UIFont systemFontOfSize:12];
-        [self.contentView addSubview:label];
-        y += 38;
-    }
-
-    [self button:@"KIỂM TRA KEY LẠI" frame:CGRectMake(5,218,135,38) action:@selector(recheckKey)];
-    [self button:@"ĐĂNG XUẤT" frame:CGRectMake(150,218,135,38) action:@selector(logout)];
-}
 
 - (NSString *)maskedKey {
     if (self.activeKey.length < 7) return @"••••••";
@@ -511,9 +721,11 @@ static void DBPresentMenu(void) {
 
         if (!scene) return;
 
-        DBWindow = [[UIWindow alloc] initWithWindowScene:scene];
+        DBWindow = [[DBPassthroughWindow alloc] initWithWindowScene:scene];
         DBWindow.frame = scene.coordinateSpace.bounds;
-        DBWindow.windowLevel = UIWindowLevelAlert - 1;
+        DBWindow.windowLevel = UIWindowLevelNormal + 1;
+        DBWindow.backgroundColor = UIColor.clearColor;
+        DBWindow.userInteractionEnabled = YES;
 
         UIViewController *root = [UIViewController new];
         root.view.backgroundColor = UIColor.clearColor;
