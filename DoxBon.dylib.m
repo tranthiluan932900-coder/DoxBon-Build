@@ -46,6 +46,8 @@ static NSString * const DBZalo = @"0854582858";
 - (void)buildPanel {
     self.panel = [[UIView alloc] initWithFrame:CGRectMake(0,0,320,360)];
     self.panel.center = self.view.center;
+    self.panel.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin |
+                                  UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleBottomMargin;
     self.panel.backgroundColor = [UIColor colorWithRed:0.055 green:0.035 blue:0.105 alpha:0.97];
     self.panel.layer.cornerRadius = 22;
     self.panel.layer.borderWidth = 1.5;
@@ -299,6 +301,7 @@ static NSString * const DBZalo = @"0854582858";
         picker.sourceType = UIImagePickerControllerSourceTypePhotoLibrary;
         picker.mediaTypes = @[(NSString *)kUTTypeImage, (NSString *)kUTTypeMovie];
         picker.delegate = self;
+        objc_setAssociatedObject(picker, @selector(picker:didFinishPicking:), purpose, OBJC_ASSOCIATION_COPY_NONATOMIC);
         [self presentViewController:picker animated:YES completion:nil];
     }
 }
@@ -363,7 +366,9 @@ static NSString * const DBZalo = @"0854582858";
             VNImageRequestHandler *handler = [[VNImageRequestHandler alloc] initWithCGImage:image.CGImage options:@{}];
             [handler performRequests:@[request] error:nil];
             for (VNBarcodeObservation *item in request.results) {
-                if (item.payloadStringValue.length) [codes addObject:item.payloadStringValue];
+                if (item.payloadStringValue.length && ![codes containsObject:item.payloadStringValue]) {
+                    [codes addObject:item.payloadStringValue];
+                }
             }
         }
         [self scanQRFromPickerResults:results index:index+1 collected:codes];
@@ -375,27 +380,57 @@ static NSString * const DBZalo = @"0854582858";
 }
 
 - (void)imagePickerController:(UIImagePickerController *)picker didFinishPickingMediaWithInfo:(NSDictionary<UIImagePickerControllerInfoKey,id> *)info {
+    NSString *purpose = objc_getAssociatedObject(picker, @selector(picker:didFinishPicking:));
     UIImage *image = info[UIImagePickerControllerOriginalImage];
     [picker dismissViewControllerAnimated:YES completion:^{
-        if (image) [self showImage:image message:@"Đã chọn ảnh từ thư viện. Tự động thay asset trong project cần API tương thích Video Star."];
-        else [self showMessage:@"Đã chọn media. Tự động chèn vào project chưa được hỗ trợ trong source hiện tại."];
+        if (!image) {
+            [self showMessage:@"Không đọc được ảnh đã chọn. Bản hiện tại chỉ xử lý ảnh; chưa tự chèn video vào project Video Star."];
+            return;
+        }
+        if ([purpose isEqualToString:@"qr"]) {
+            VNDetectBarcodesRequest *request = [VNDetectBarcodesRequest new];
+            request.symbologies = @[VNBarcodeSymbologyQR];
+            VNImageRequestHandler *handler = [[VNImageRequestHandler alloc] initWithCGImage:image.CGImage options:@{}];
+            NSError *error = nil;
+            [handler performRequests:@[request] error:&error];
+            NSMutableArray<NSString *> *codes = [NSMutableArray array];
+            for (VNBarcodeObservation *item in request.results) {
+                if (item.payloadStringValue.length && ![codes containsObject:item.payloadStringValue]) {
+                    [codes addObject:item.payloadStringValue];
+                }
+            }
+            NSString *result = error ? @"Không thể quét QR trong ảnh." :
+                (codes.count ? [codes componentsJoinedByString:@"\\n\\n"] : @"Không tìm thấy mã QR.");
+            [self showMessage:result];
+        } else {
+            NSString *message = [purpose isEqualToString:@"replace"]
+                ? @"Đã chọn ảnh. Tự động thay asset trong timeline cần API project của Video Star."
+                : @"Đã chọn ảnh. Tự động chèn vào project cần API project của Video Star.";
+            [self showImage:image message:message];
+        }
     }];
 }
 
 - (void)showImage:(UIImage *)image message:(NSString *)message {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"DoxBon VDS" message:message preferredStyle:UIAlertControllerStyleAlert];
-    UIImageView *preview = [[UIImageView alloc] initWithImage:image];
-    preview.contentMode = UIViewContentModeScaleAspectFit;
-    preview.frame = CGRectMake(0, 0, 250, 150);
-    [alert.view addSubview:preview];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Đóng" style:UIAlertActionStyleDefault handler:nil]];
-    [self presentViewController:alert animated:YES completion:nil];
+    CGSize size = image.size;
+    NSString *details = [NSString stringWithFormat:@"%@\\n\\nKích thước ảnh: %.0f × %.0f px",
+                         message, size.width * image.scale, size.height * image.scale];
+    [self showMessage:details];
 }
 
 - (void)showMessage:(NSString *)message {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"DoxBon VDS" message:message preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-    [self presentViewController:alert animated:YES completion:nil];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (!self.viewIfLoaded.window) return;
+        UIViewController *presenter = self;
+        while (presenter.presentedViewController && !presenter.presentedViewController.isBeingDismissed) {
+            presenter = presenter.presentedViewController;
+        }
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"DoxBon VDS"
+                                                                       message:message
+                                                                preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+        [presenter presentViewController:alert animated:YES completion:nil];
+    });
 }
 
 - (void)showSettings {
