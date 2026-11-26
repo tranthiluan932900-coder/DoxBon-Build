@@ -3,7 +3,10 @@
 #import <Vision/Vision.h>
 #import <MobileCoreServices/MobileCoreServices.h>
 #import <objc/runtime.h>
+#import <objc/message.h>
 #import <math.h>
+#import <stdlib.h>
+#import <ImageIO/ImageIO.h>
 
 static NSString * const DBLicenseActivateEndpoint = @"https://hhabjbw-001-site1.ktempurl.com/api/license/activate";
 static NSString * const DBLicenseValidateEndpoint = @"https://hhabjbw-001-site1.ktempurl.com/api/license/validate";
@@ -27,6 +30,8 @@ static NSString * const DBZalo = @"0854582858";
 @property(nonatomic,strong) UILabel *headerSubtitle;
 @property(nonatomic,strong) UIView *activeIndicator;
 @property(nonatomic,strong) NSArray<UIButton *> *tabButtons;
+- (void)appendViewControllerTree:(UIViewController *)controller depth:(NSUInteger)depth toReport:(NSMutableString *)report;
+- (void)appendRuntimeObjectDetails:(id)object depth:(NSUInteger)depth toReport:(NSMutableString *)report;
 @end
 
 @interface DBPassthroughView : UIView
@@ -208,6 +213,8 @@ static NSString * const DBZalo = @"0854582858";
     // Drag the collapsed icon anywhere on screen; a normal tap still opens the menu.
     UIPanGestureRecognizer *iconPan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(dragFloatingButton:)];
     iconPan.minimumNumberOfTouches = 1;
+    iconPan.cancelsTouchesInView = NO;
+    iconPan.delaysTouchesBegan = NO;
     [self.floatingButton addGestureRecognizer:iconPan];
     [self.view addSubview:self.floatingButton];
     NSString *savedPosition = [[NSUserDefaults standardUserDefaults] stringForKey:DBFloatingButtonPositionKey];
@@ -605,7 +612,7 @@ static NSString * const DBZalo = @"0854582858";
     [self clearDashboardContent];
     CGFloat w = self.contentView.bounds.size.width;
     [self label:@"DOXBON VDS TOOL" frame:CGRectMake(5,5,w-10,24) size:16 color:[UIColor colorWithRed:.80 green:.60 blue:1 alpha:1]];
-    [self label:@"PURPLE NEON EDITION  •  BUILD 1.4" frame:CGRectMake(5,33,w-10,18) size:9 color:[UIColor colorWithWhite:1 alpha:.52]];
+    [self label:@"PURPLE NEON EDITION  •  BUILD 1.6" frame:CGRectMake(5,33,w-10,18) size:9 color:[UIColor colorWithWhite:1 alpha:.52]];
     [self label:@"Developer support\nTikTok: @tuatbonxyz\nZalo: 0854582858\n\nTouch passthrough: enabled\nQR engine: Apple Vision\nTimeline automation: runtime API inspection required." frame:CGRectMake(7,65,w-14,125) size:10 color:[UIColor colorWithWhite:1 alpha:.78]];
     [self button:@"EXPORT VIDEO STAR API DIAGNOSTIC" frame:CGRectMake(5,198,w-10,42) action:@selector(exportRuntimeDiagnostic)];
     [self finishContentAtY:252];
@@ -682,11 +689,49 @@ static NSString * const DBZalo = @"0854582858";
     }];
 }
 
+- (CGImagePropertyOrientation)imageOrientationForUIImage:(UIImage *)image {
+    switch (image.imageOrientation) {
+        case UIImageOrientationDown: return kCGImagePropertyOrientationDown;
+        case UIImageOrientationLeft: return kCGImagePropertyOrientationLeft;
+        case UIImageOrientationRight: return kCGImagePropertyOrientationRight;
+        case UIImageOrientationUpMirrored: return kCGImagePropertyOrientationUpMirrored;
+        case UIImageOrientationDownMirrored: return kCGImagePropertyOrientationDownMirrored;
+        case UIImageOrientationLeftMirrored: return kCGImagePropertyOrientationLeftMirrored;
+        case UIImageOrientationRightMirrored: return kCGImagePropertyOrientationRightMirrored;
+        case UIImageOrientationUp:
+        default: return kCGImagePropertyOrientationUp;
+    }
+}
+
+- (void)showQRResults:(NSArray<NSString *> *)codes scannedCount:(NSUInteger)scannedCount {
+    NSString *body = codes.count ? [codes componentsJoinedByString:@"\n\n"] : @"Không tìm thấy mã QR trong các ảnh đã chọn.";
+    NSString *message = [NSString stringWithFormat:@"Đã quét %lu ảnh.\nTìm thấy %lu mã QR duy nhất.\n\n%@",
+                         (unsigned long)scannedCount, (unsigned long)codes.count, body];
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"DOXBON QR LAB" message:message preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Đóng" style:UIAlertActionStyleCancel handler:nil]];
+    if (codes.count) {
+        NSString *allCodes = [codes componentsJoinedByString:@"\n"];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Sao chép tất cả" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+            UIPasteboard.generalPasteboard.string = allCodes;
+            [self showMessage:@"Đã sao chép toàn bộ mã QR."];
+        }]];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Chia sẻ" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+            UIActivityViewController *share = [[UIActivityViewController alloc] initWithActivityItems:@[allCodes] applicationActivities:nil];
+            if (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad) {
+                share.popoverPresentationController.sourceView = self.view;
+                share.popoverPresentationController.sourceRect = CGRectMake(CGRectGetMidX(self.view.bounds), CGRectGetMidY(self.view.bounds), 1, 1);
+            }
+            [self presentViewController:share animated:YES completion:nil];
+        }]];
+    }
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
 - (void)scanQRFromPickerResults:(NSArray<PHPickerResult *> *)results index:(NSUInteger)index collected:(NSMutableArray<NSString *> *)codes API_AVAILABLE(ios(14.0)) {
     if (index >= results.count) {
-        NSString *message = codes.count ? [codes componentsJoinedByString:@"\n\n"] : @"Không tìm thấy mã QR trong các ảnh đã chọn.";
-        NSString *summary = [NSString stringWithFormat:@"Đã quét %lu ảnh.\nTìm thấy %lu mã QR.\n\n%@", (unsigned long)results.count, (unsigned long)codes.count, message];
-        dispatch_async(dispatch_get_main_queue(), ^{ [self showMessage:summary]; });
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self showQRResults:codes scannedCount:results.count];
+        });
         return;
     }
     NSItemProvider *provider = results[index].itemProvider;
@@ -699,8 +744,16 @@ static NSString * const DBZalo = @"0854582858";
             UIImage *image = (UIImage *)object;
             VNDetectBarcodesRequest *request = [VNDetectBarcodesRequest new];
             request.symbologies = @[VNBarcodeSymbologyQR];
-            VNImageRequestHandler *handler = [[VNImageRequestHandler alloc] initWithCGImage:image.CGImage options:@{}];
-            [handler performRequests:@[request] error:nil];
+            if (image.CGImage) {
+                VNImageRequestHandler *handler = [[VNImageRequestHandler alloc] initWithCGImage:image.CGImage
+                                                                                     orientation:[self imageOrientationForUIImage:image]
+                                                                                         options:@{}];
+                NSError *scanError = nil;
+                [handler performRequests:@[request] error:&scanError];
+                if (scanError) {
+                    NSLog(@"[DoxBon QR] Vision scan error: %@", scanError);
+                }
+            }
             for (VNBarcodeObservation *item in request.results) {
                 if (item.payloadStringValue.length && ![codes containsObject:item.payloadStringValue]) [codes addObject:item.payloadStringValue];
             }
@@ -720,8 +773,12 @@ static NSString * const DBZalo = @"0854582858";
         if (image && [purpose isEqualToString:@"qr"]) {
             VNDetectBarcodesRequest *request = [VNDetectBarcodesRequest new];
             request.symbologies = @[VNBarcodeSymbologyQR];
-            VNImageRequestHandler *handler = [[VNImageRequestHandler alloc] initWithCGImage:image.CGImage options:@{}];
-            [handler performRequests:@[request] error:nil];
+            if (image.CGImage) {
+                VNImageRequestHandler *handler = [[VNImageRequestHandler alloc] initWithCGImage:image.CGImage
+                                                                                     orientation:[self imageOrientationForUIImage:image]
+                                                                                         options:@{}];
+                [handler performRequests:@[request] error:nil];
+            }
             NSMutableArray *values = [NSMutableArray array];
             for (VNBarcodeObservation *item in request.results) if (item.payloadStringValue.length) [values addObject:item.payloadStringValue];
             [self showMessage:values.count ? [values componentsJoinedByString:@"\n\n"] : @"Không tìm thấy mã QR."];
@@ -754,6 +811,81 @@ static NSString * const DBZalo = @"0854582858";
     });
 }
 
+
+- (void)appendRuntimeObjectDetails:(id)object depth:(NSUInteger)depth toReport:(NSMutableString *)report {
+    if (!object || depth > 2) return;
+    Class cls = object_getClass(object);
+    [report appendFormat:@"%@INSTANCE %@\n", [@"" stringByPaddingToLength:depth * 2 withString:@" " startingAtIndex:0],
+        NSStringFromClass(cls) ?: @"unknown"];
+
+    // Only inspect Objective-C object ivars. Never invoke setters or mutate the app.
+    for (Class current = cls; current && current != NSObject.class; current = class_getSuperclass(current)) {
+        unsigned int count = 0;
+        Ivar *ivars = class_copyIvarList(current, &count);
+        for (unsigned int i = 0; i < count; i++) {
+            const char *type = ivar_getTypeEncoding(ivars[i]);
+            if (!type || type[0] != '@') continue;
+            id value = nil;
+            @try { value = object_getIvar(object, ivars[i]); } @catch (__unused NSException *exception) { value = nil; }
+            if (!value) continue;
+            NSString *ivarName = [NSString stringWithUTF8String:ivar_getName(ivars[i]) ?: ""];
+            [report appendFormat:@"%@  %@ -> %@\n",
+                [@"" stringByPaddingToLength:depth * 2 + 2 withString:@" " startingAtIndex:0],
+                ivarName ?: @"(ivar)", NSStringFromClass(object_getClass(value)) ?: @"object"];
+        }
+        free(ivars);
+    }
+
+    // Report useful live values only for known, already loaded classes and verified getters.
+    if ([object respondsToSelector:NSSelectorFromString(@"songBPM")] &&
+        [object respondsToSelector:NSSelectorFromString(@"songBPMOffset")] &&
+        [object respondsToSelector:NSSelectorFromString(@"sceneDuration")]) {
+        @try {
+            float (*floatGetter)(id, SEL) = (float (*)(id, SEL))objc_msgSend;
+            SEL bpmSel = NSSelectorFromString(@"songBPM");
+            SEL offsetSel = NSSelectorFromString(@"songBPMOffset");
+            SEL durationSel = NSSelectorFromString(@"sceneDuration");
+            [report appendFormat:@"%@  ClipMixer live: BPM=%.3f offset=%.3f duration=%.3fs\n",
+                [@"" stringByPaddingToLength:depth * 2 + 2 withString:@" " startingAtIndex:0],
+                floatGetter(object, bpmSel), floatGetter(object, offsetSel), floatGetter(object, durationSel)];
+            SEL sceneSel = NSSelectorFromString(@"sceneIndex");
+            if ([object respondsToSelector:sceneSel]) {
+                unsigned long long (*uintGetter)(id, SEL) = (unsigned long long (*)(id, SEL))objc_msgSend;
+                [report appendFormat:@"%@  sceneIndex=%llu\n",
+                    [@"" stringByPaddingToLength:depth * 2 + 2 withString:@" " startingAtIndex:0],
+                    uintGetter(object, sceneSel)];
+            }
+            SEL projectSel = NSSelectorFromString(@"project");
+            if ([object respondsToSelector:projectSel]) {
+                id (*objectGetter)(id, SEL) = (id (*)(id, SEL))objc_msgSend;
+                id project = objectGetter(object, projectSel);
+                [report appendFormat:@"%@  projectClass=%@\n",
+                    [@"" stringByPaddingToLength:depth * 2 + 2 withString:@" " startingAtIndex:0],
+                    project ? NSStringFromClass(object_getClass(project)) : @"nil"];
+            }
+        } @catch (__unused NSException *exception) {
+            [report appendString:@"  Live ClipMixer getters unavailable in this state.\n"];
+        }
+    }
+}
+
+- (void)appendViewControllerTree:(UIViewController *)controller depth:(NSUInteger)depth toReport:(NSMutableString *)report {
+    if (!controller || depth > 8) return;
+    NSString *indent = [@"" stringByPaddingToLength:depth * 2 withString:@" " startingAtIndex:0];
+    [report appendFormat:@"%@VC %@  title=%@  presented=%@\n", indent,
+        NSStringFromClass(object_getClass(controller)),
+        controller.title ?: @"",
+        controller.presentedViewController ? NSStringFromClass(object_getClass(controller.presentedViewController)) : @"none"];
+    if ([NSStringFromClass(object_getClass(controller)) containsString:@"ClipMixer"]) {
+        [self appendRuntimeObjectDetails:controller depth:depth + 1 toReport:report];
+    }
+    for (UIViewController *child in controller.childViewControllers) {
+        [self appendViewControllerTree:child depth:depth + 1 toReport:report];
+    }
+    if (controller.presentedViewController) {
+        [self appendViewControllerTree:controller.presentedViewController depth:depth + 1 toReport:report];
+    }
+}
 
 - (void)exportRuntimeDiagnostic {
     // Read-only runtime inspection. This deliberately does not invoke unknown selectors.
@@ -789,6 +921,19 @@ static NSString * const DBZalo = @"0854582858";
         free(methods);
         [report appendString:@"\n"];
     }
+    [report appendString:@"===== LIVE VIEW CONTROLLER HIERARCHY (READ ONLY) =====\n"];
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if (![scene isKindOfClass:UIWindowScene.class]) continue;
+        UIWindowScene *windowScene = (UIWindowScene *)scene;
+        for (UIWindow *window in windowScene.windows) {
+            if (!window.rootViewController || window.hidden) continue;
+            [report appendFormat:@"WINDOW level=%.1f key=%@\n", window.windowLevel, window.isKeyWindow ? @"YES" : @"NO"];
+            [self appendViewControllerTree:window.rootViewController depth:0 toReport:report];
+        }
+    }
+    [report appendString:@"\n===== LIVE MULTI-LAYER ENGINE REFERENCES =====\n"];
+    [report appendString:@"Engine instances are reported through visible controller object ivars above when directly retained by a controller. No private selectors are invoked by this diagnostic.\n\n"];
+
     // Include only relevant loaded classes, and list methods whose names suggest project,
     // timeline, layer, QR, clip, scene, or export functionality.
     [report appendString:@"===== MATCHING LOADED CLASSES =====\n"];
@@ -843,9 +988,34 @@ static NSString * const DBZalo = @"0854582858";
         return;
     }
 
-    [self showLogin];
-    self.keyField.text = key;
-    [self validateKey];
+    NSString *deviceID = UIDevice.currentDevice.identifierForVendor.UUIDString ?: @"unknown-device";
+    [self sendLicenseRequestTo:DBLicenseValidateEndpoint key:key deviceID:deviceID
+                    completion:^(NSDictionary *validation, NSError *error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            BOOL valid = !error && [validation[@"ok"] respondsToSelector:@selector(boolValue)]
+                         && [validation[@"ok"] boolValue]
+                         && [@"active" isEqualToString:validation[@"status"]];
+            if (!valid) {
+                NSString *reason = error ? @"Không kết nối được máy chủ." :
+                    ([validation[@"error"] isKindOfClass:NSString.class] ? validation[@"error"] : @"Key không còn hoạt động.");
+                [self showMessage:reason];
+                if (!error) [self logout];
+                return;
+            }
+            id expiry = validation[@"expires_at"];
+            if ([expiry respondsToSelector:@selector(longLongValue)] && [expiry longLongValue] > 0) {
+                NSDate *date = [NSDate dateWithTimeIntervalSince1970:[expiry longLongValue]];
+                NSDateFormatter *formatter = [NSDateFormatter new];
+                formatter.dateStyle = NSDateFormatterMediumStyle;
+                formatter.timeStyle = NSDateFormatterNoStyle;
+                self.expiryText = [formatter stringFromDate:date];
+            } else {
+                self.expiryText = @"Vĩnh viễn";
+            }
+            [self showDashboardWithExpiry:self.expiryText];
+            [self showMessage:@"VIP Key vẫn đang hoạt động."];
+        });
+    }];
 }
 
 - (void)logout {
