@@ -1,14 +1,15 @@
-#import <CoreGraphics/CoreGraphics.h>
-#import <QuartzCore/QuartzCore.h>
 #import <UIKit/UIKit.h>
 #import <PhotosUI/PhotosUI.h>
 #import <Vision/Vision.h>
 #import <MobileCoreServices/MobileCoreServices.h>
 #import <objc/runtime.h>
+#import <math.h>
 
 static NSString * const DBLicenseActivateEndpoint = @"https://hhabjbw-001-site1.ktempurl.com/api/license/activate";
 static NSString * const DBLicenseValidateEndpoint = @"https://hhabjbw-001-site1.ktempurl.com/api/license/validate";
 static NSString * const DBTikTok = @"@tuatbonxyz";
+static NSString * const DBSavedLicenseKey = @"com.doxbon.vds.savedLicenseKey";
+static NSString * const DBFloatingButtonPositionKey = @"com.doxbon.vds.floatingButtonPosition";
 static NSString * const DBZalo = @"0854582858";
 
 @interface DBMenuController : UIViewController <PHPickerViewControllerDelegate, UIImagePickerControllerDelegate, UINavigationControllerDelegate>
@@ -71,6 +72,7 @@ static NSString * const DBZalo = @"0854582858";
     self.view.backgroundColor = UIColor.clearColor;
     [self buildPanel];
     [self showLogin];
+    [self restoreSavedLicenseKey];
 }
 
 - (void)buildPanel {
@@ -203,7 +205,18 @@ static NSString * const DBZalo = @"0854582858";
     self.floatingButton.titleLabel.numberOfLines = 2;
     self.floatingButton.titleLabel.textAlignment = NSTextAlignmentCenter;
     [self.floatingButton addTarget:self action:@selector(openMenu) forControlEvents:UIControlEventTouchUpInside];
+    // Drag the collapsed icon anywhere on screen; a normal tap still opens the menu.
+    UIPanGestureRecognizer *iconPan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(dragFloatingButton:)];
+    iconPan.minimumNumberOfTouches = 1;
+    [self.floatingButton addGestureRecognizer:iconPan];
     [self.view addSubview:self.floatingButton];
+    NSString *savedPosition = [[NSUserDefaults standardUserDefaults] stringForKey:DBFloatingButtonPositionKey];
+    if (savedPosition.length) {
+        CGPoint point = CGPointFromString(savedPosition);
+        if (isfinite(point.x) && isfinite(point.y) && !CGPointEqualToPoint(point, CGPointZero)) {
+            self.floatingButton.center = point;
+        }
+    }
     self.floatingButton.hidden = YES;
     self.tabBar.hidden = YES;
 }
@@ -211,6 +224,26 @@ static NSString * const DBZalo = @"0854582858";
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
     self.panelGradient.frame = self.panel.bounds;
+}
+
+- (void)dragFloatingButton:(UIPanGestureRecognizer *)gesture {
+    CGPoint delta = [gesture translationInView:self.view];
+    CGPoint center = self.floatingButton.center;
+    center.x += delta.x;
+    center.y += delta.y;
+    CGFloat halfW = CGRectGetWidth(self.floatingButton.bounds) * 0.5;
+    CGFloat halfH = CGRectGetHeight(self.floatingButton.bounds) * 0.5;
+    CGFloat width = CGRectGetWidth(self.view.bounds);
+    CGFloat height = CGRectGetHeight(self.view.bounds);
+    center.x = MIN(MAX(halfW, center.x), MAX(halfW, width-halfW));
+    center.y = MIN(MAX(halfH, center.y), MAX(halfH, height-halfH));
+    self.floatingButton.center = center;
+    [gesture setTranslation:CGPointZero inView:self.view];
+    if (gesture.state == UIGestureRecognizerStateEnded || gesture.state == UIGestureRecognizerStateCancelled) {
+        [[NSUserDefaults standardUserDefaults] setObject:NSStringFromCGPoint(self.floatingButton.center)
+                                                  forKey:DBFloatingButtonPositionKey];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+    }
 }
 
 - (void)dragPanel:(UIPanGestureRecognizer *)gesture {
@@ -390,6 +423,8 @@ static NSString * const DBZalo = @"0854582858";
                                  && [@"active" isEqualToString:validation[@"status"]];
                     if (valid) {
                         self.activeKey = key;
+                        [[NSUserDefaults standardUserDefaults] setObject:key forKey:DBSavedLicenseKey];
+                        [[NSUserDefaults standardUserDefaults] synchronize];
                         id expiry = validation[@"expires_at"];
                         if ([expiry respondsToSelector:@selector(longLongValue)] && [expiry longLongValue] > 0) {
                             NSDate *date = [NSDate dateWithTimeIntervalSince1970:[expiry longLongValue]];
@@ -408,6 +443,43 @@ static NSString * const DBZalo = @"0854582858";
                     }
                 });
             }];
+        });
+    }];
+}
+
+- (void)restoreSavedLicenseKey {
+    NSString *savedKey = [[NSUserDefaults standardUserDefaults] stringForKey:DBSavedLicenseKey];
+    if (![savedKey isKindOfClass:NSString.class] || savedKey.length < 8) return;
+    self.keyField.text = savedKey;
+    self.statusLabel.text = @"Đang kiểm tra lại VIP Key đã lưu...";
+    NSString *deviceID = UIDevice.currentDevice.identifierForVendor.UUIDString ?: @"unknown-device";
+    [self sendLicenseRequestTo:DBLicenseValidateEndpoint key:savedKey deviceID:deviceID
+                    completion:^(NSDictionary *validation, NSError *error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            BOOL valid = !error && [validation[@"ok"] respondsToSelector:@selector(boolValue)]
+                         && [validation[@"ok"] boolValue]
+                         && [@"active" isEqualToString:validation[@"status"]];
+            if (!valid) {
+                // Keep the key in the field so the user can retry if the server was offline.
+                self.statusLabel.text = error ? @"Không kết nối được máy chủ. Key vẫn được giữ lại." : @"Key không còn hoạt động. Vui lòng nhập key khác.";
+                if (!error) {
+                    [[NSUserDefaults standardUserDefaults] removeObjectForKey:DBSavedLicenseKey];
+                    [[NSUserDefaults standardUserDefaults] synchronize];
+                }
+                return;
+            }
+            self.activeKey = savedKey;
+            id expiry = validation[@"expires_at"];
+            if ([expiry respondsToSelector:@selector(longLongValue)] && [expiry longLongValue] > 0) {
+                NSDate *date = [NSDate dateWithTimeIntervalSince1970:[expiry longLongValue]];
+                NSDateFormatter *formatter = [NSDateFormatter new];
+                formatter.dateStyle = NSDateFormatterMediumStyle;
+                formatter.timeStyle = NSDateFormatterNoStyle;
+                self.expiryText = [formatter stringFromDate:date];
+            } else {
+                self.expiryText = @"Vĩnh viễn";
+            }
+            [self showDashboardWithExpiry:self.expiryText];
         });
     }];
 }
@@ -691,6 +763,8 @@ static NSString * const DBZalo = @"0854582858";
 - (void)logout {
     self.activeKey = nil;
     self.expiryText = nil;
+    [[NSUserDefaults standardUserDefaults] removeObjectForKey:DBSavedLicenseKey];
+    [[NSUserDefaults standardUserDefaults] synchronize];
     [self showLogin];
 }
 
