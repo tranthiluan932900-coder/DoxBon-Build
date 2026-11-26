@@ -1,53 +1,64 @@
-// DoxBon VDS Tool — source replacement
-// Target: iOS 14+ / Objective-C / arm64
-// IMPORTANT: QR pairing and export queue are implemented locally.
-// Automatic insertion/export inside Video Star is NOT enabled until its private
-// method signatures and owning classes are verified against the target build.
-
 #import <UIKit/UIKit.h>
 #import <PhotosUI/PhotosUI.h>
 #import <Vision/Vision.h>
-#import <AVFoundation/AVFoundation.h>
+#import <MobileCoreServices/MobileCoreServices.h>
 #import <objc/runtime.h>
 #import <math.h>
 
 static NSString * const DBLicenseActivateEndpoint = @"https://hhabjbw-001-site1.ktempurl.com/api/license/activate";
 static NSString * const DBLicenseValidateEndpoint = @"https://hhabjbw-001-site1.ktempurl.com/api/license/validate";
 static NSString * const DBTikTok = @"@tuatbonxyz";
-static NSString * const DBZalo = @"0854582858";
 static NSString * const DBSavedLicenseKey = @"com.doxbon.vds.savedLicenseKey";
 static NSString * const DBFloatingButtonPositionKey = @"com.doxbon.vds.floatingButtonPosition";
-static NSString * const DBQRJobsKey = @"com.doxbon.vds.qrJobs.v1";
+static NSString * const DBZalo = @"0854582858";
 
-@interface DBPassthroughView : UIView @end
-@implementation DBPassthroughView
-- (UIView *)hitTest:(CGPoint)p withEvent:(UIEvent *)e {
-    UIView *v = [super hitTest:p withEvent:e];
-    return v == self ? nil : v;
-}
-@end
-
-@interface DBPassthroughWindow : UIWindow @end
-@implementation DBPassthroughWindow
-- (UIView *)hitTest:(CGPoint)p withEvent:(UIEvent *)e {
-    UIView *v = [super hitTest:p withEvent:e];
-    if (v == self.rootViewController.view) return nil;
-    return v;
-}
-@end
-
-@interface DBMenuController : UIViewController <PHPickerViewControllerDelegate, UINavigationControllerDelegate>
+@interface DBMenuController : UIViewController <PHPickerViewControllerDelegate, UIImagePickerControllerDelegate, UINavigationControllerDelegate>
 @property(nonatomic,strong) UIView *panel;
-@property(nonatomic,strong) UIScrollView *content;
-@property(nonatomic,strong) UIButton *floating;
-@property(nonatomic,strong) UILabel *status;
 @property(nonatomic,strong) UITextField *keyField;
+@property(nonatomic,strong) UILabel *statusLabel;
 @property(nonatomic,strong) NSString *activeKey;
+@property(nonatomic,strong) NSDate *expiryDate;
+@property(nonatomic,strong) UIView *contentView;
 @property(nonatomic,strong) NSString *expiryText;
-@property(nonatomic,strong) NSArray<UIButton *> *tabs;
-@property(nonatomic,strong) NSMutableArray<NSMutableDictionary *> *jobs;
-@property(nonatomic) NSInteger exportIndex;
-@property(nonatomic,strong) NSString *pickerPurpose;
+@property(nonatomic,strong) UIButton *floatingButton;
+@property(nonatomic,strong) UIScrollView *tabBar;
+@property(nonatomic,strong) UIScrollView *contentScroll;
+@property(nonatomic,strong) CAGradientLayer *panelGradient;
+@property(nonatomic,strong) UILabel *headerSubtitle;
+@property(nonatomic,strong) UIView *activeIndicator;
+@property(nonatomic,strong) NSArray<UIButton *> *tabButtons;
+@end
+
+@interface DBPassthroughView : UIView
+@end
+
+@implementation DBPassthroughView
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIView *hit = [super hitTest:point withEvent:event];
+    // Outside visible controls, let the underlying Video Star window receive touches.
+    return hit == self ? nil : hit;
+}
+@end
+
+// Important: the transparent root controller must not become the hit target.
+@interface DBPassthroughWindow : UIWindow
+@end
+@implementation DBPassthroughWindow
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIView *hit = [super hitTest:point withEvent:event];
+    if (hit == self.rootViewController.view) return nil;
+    return hit;
+}
+@end
+
+@interface DBRoundedPanelView : UIView
+@end
+@implementation DBRoundedPanelView
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIBezierPath *shape = [UIBezierPath bezierPathWithRoundedRect:self.bounds cornerRadius:25.0];
+    if (![shape containsPoint:point]) return nil;
+    return [super hitTest:point withEvent:event];
+}
 @end
 
 @implementation DBMenuController
@@ -55,311 +66,844 @@ static NSString * const DBQRJobsKey = @"com.doxbon.vds.qrJobs.v1";
 - (void)loadView {
     self.view = [[DBPassthroughView alloc] initWithFrame:UIScreen.mainScreen.bounds];
 }
+
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = UIColor.clearColor;
-    self.jobs = [NSMutableArray arrayWithArray:[[NSUserDefaults standardUserDefaults] objectForKey:DBQRJobsKey] ?: @[]];
-    [self buildUI];
+    [self buildPanel];
     [self showLogin];
-    [self restoreKey];
+    [self restoreSavedLicenseKey];
 }
-- (UIColor *)purple { return [UIColor colorWithRed:.43 green:.12 blue:.82 alpha:1]; }
-- (void)buildUI {
-    CGFloat sw = CGRectGetWidth(UIScreen.mainScreen.bounds), sh = CGRectGetHeight(UIScreen.mainScreen.bounds);
-    CGFloat w = MIN(354, sw-24), h = MIN(470, sh-90);
-    self.panel = [[UIView alloc] initWithFrame:CGRectMake((sw-w)/2, (sh-h)/2, w, h)];
-    self.panel.backgroundColor = [UIColor colorWithRed:.025 green:.02 blue:.09 alpha:.985];
-    self.panel.layer.cornerRadius = 24; self.panel.layer.borderWidth = 1.5;
-    self.panel.layer.borderColor = [self purple].CGColor; self.panel.clipsToBounds = YES;
-    CAGradientLayer *g = [CAGradientLayer layer]; g.frame = self.panel.bounds;
-    g.colors = @[(id)[UIColor colorWithRed:.13 green:.025 blue:.25 alpha:1].CGColor,
-                 (id)[UIColor colorWithRed:.018 green:.025 blue:.10 alpha:1].CGColor];
-    g.cornerRadius = 24; [self.panel.layer insertSublayer:g atIndex:0];
+
+- (void)buildPanel {
+    CGFloat screenW = CGRectGetWidth(UIScreen.mainScreen.bounds);
+    CGFloat screenH = CGRectGetHeight(UIScreen.mainScreen.bounds);
+    CGFloat panelW = MIN(350.0, screenW - 30.0);
+    CGFloat panelH = MIN(410.0, screenH - 110.0);
+    self.panel = [[DBRoundedPanelView alloc] initWithFrame:CGRectMake(0, 0, panelW, panelH)];
+    self.panel.center = self.view.center;
+    self.panel.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin |
+                                  UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleBottomMargin;
+    self.panel.backgroundColor = [UIColor colorWithRed:.025 green:.018 blue:.075 alpha:.985];
+    self.panel.layer.cornerRadius = 25.0;
+    self.panel.layer.borderWidth = 1.6;
+    self.panel.layer.borderColor = [UIColor colorWithRed:.67 green:.28 blue:1 alpha:1].CGColor;
+    self.panel.layer.shadowColor = [UIColor colorWithRed:.55 green:.12 blue:1 alpha:1].CGColor;
+    self.panel.layer.shadowOpacity = .62;
+    self.panel.layer.shadowRadius = 24;
+    self.panel.layer.shadowOffset = CGSizeMake(0, 8);
+    self.panel.clipsToBounds = NO;
     [self.view addSubview:self.panel];
 
-    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(16,12,w-70,25)];
-    title.text = @"★  DOXBON / VDS TOOL"; title.textColor = [UIColor colorWithRed:.82 green:.62 blue:1 alpha:1];
-    title.font = [UIFont boldSystemFontOfSize:15]; [self.panel addSubview:title];
-    UIButton *close = [UIButton buttonWithType:UIButtonTypeSystem]; close.frame = CGRectMake(w-43,10,32,32);
-    [close setTitle:@"×" forState:UIControlStateNormal]; close.titleLabel.font = [UIFont systemFontOfSize:25];
-    [close setTitleColor:UIColor.whiteColor forState:UIControlStateNormal]; [close addTarget:self action:@selector(closeMenu) forControlEvents:UIControlEventTouchUpInside];
+    self.panelGradient = [CAGradientLayer layer];
+    self.panelGradient.frame = self.panel.bounds;
+    self.panelGradient.cornerRadius = 25.0;
+    self.panelGradient.colors = @[
+        (id)[UIColor colorWithRed:.12 green:.025 blue:.25 alpha:1].CGColor,
+        (id)[UIColor colorWithRed:.025 green:.025 blue:.105 alpha:1].CGColor,
+        (id)[UIColor colorWithRed:.018 green:.055 blue:.16 alpha:1].CGColor
+    ];
+    self.panelGradient.startPoint = CGPointMake(0, 0);
+    self.panelGradient.endPoint = CGPointMake(1, 1);
+    [self.panel.layer insertSublayer:self.panelGradient atIndex:0];
+
+    // Bottom neon streak, matching the reference menu artwork.
+    CAGradientLayer *streak = [CAGradientLayer layer];
+    streak.frame = CGRectMake(0, panelH-5, panelW, 5);
+    streak.colors = @[(id)[UIColor colorWithRed:.35 green:.12 blue:1 alpha:0].CGColor,
+                      (id)[UIColor colorWithRed:.72 green:.18 blue:1 alpha:1].CGColor,
+                      (id)[UIColor colorWithRed:.20 green:.48 blue:1 alpha:.85].CGColor];
+    streak.startPoint = CGPointMake(0, .5);
+    streak.endPoint = CGPointMake(1, .5);
+    streak.cornerRadius = 3;
+    [self.panel.layer addSublayer:streak];
+
+    UILabel *star = [[UILabel alloc] initWithFrame:CGRectMake(13, 13, 30, 32)];
+    star.text = @"â";
+    star.font = [UIFont systemFontOfSize:27 weight:UIFontWeightBlack];
+    star.textColor = [UIColor colorWithRed:.68 green:.25 blue:1 alpha:1];
+    [self.panel addSubview:star];
+
+    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(47, 13, panelW-100, 24)];
+    title.text = @"DOXBON / VDS TOOL";
+    title.font = [UIFont systemFontOfSize:15.5 weight:UIFontWeightHeavy];
+    title.textColor = [UIColor colorWithRed:.78 green:.48 blue:1 alpha:1];
+    [self.panel addSubview:title];
+
+    self.headerSubtitle = [[UILabel alloc] initWithFrame:CGRectMake(48, 37, panelW-100, 15)];
+    self.headerSubtitle.text = @"VIP CONTROL CENTER  â¢  ONLINE  â";
+    self.headerSubtitle.font = [UIFont systemFontOfSize:8.5 weight:UIFontWeightSemibold];
+    self.headerSubtitle.textColor = [UIColor colorWithWhite:1 alpha:.76];
+    [self.panel addSubview:self.headerSubtitle];
+
+    UIButton *close = [UIButton buttonWithType:UIButtonTypeSystem];
+    close.frame = CGRectMake(panelW-43, 14, 29, 29);
+    close.backgroundColor = [UIColor colorWithRed:.30 green:.12 blue:.55 alpha:.75];
+    close.layer.cornerRadius = 10;
+    close.layer.borderWidth = 1;
+    close.layer.borderColor = [UIColor colorWithRed:.58 green:.28 blue:1 alpha:.7].CGColor;
+    [close setTitle:@"Ã" forState:UIControlStateNormal];
+    close.titleLabel.font = [UIFont systemFontOfSize:22 weight:UIFontWeightLight];
+    [close setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
+    [close addTarget:self action:@selector(closeMenu) forControlEvents:UIControlEventTouchUpInside];
     [self.panel addSubview:close];
-    UIPanGestureRecognizer *movePanel = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(movePanel:)];
-    [title addGestureRecognizer:movePanel]; title.userInteractionEnabled = YES;
 
-    UIScrollView *bar = [[UIScrollView alloc] initWithFrame:CGRectMake(10,50,w-20,42)];
-    bar.scrollEnabled = NO; bar.backgroundColor = [UIColor colorWithWhite:1 alpha:.05]; bar.layer.cornerRadius = 13;
-    [self.panel addSubview:bar];
-    NSArray *names = @[@"HOME",@"QR LAB",@"MEDIA",@"SETTINGS",@"INFO"];
-    NSMutableArray *bs = [NSMutableArray array];
-    CGFloat bw = (w-26)/5.0;
-    for (NSInteger i=0;i<5;i++) {
-        UIButton *b = [UIButton buttonWithType:UIButtonTypeSystem]; b.frame = CGRectMake(3+i*bw,3,bw-2,36);
-        b.tag=i; b.layer.cornerRadius=10; b.titleLabel.font=[UIFont boldSystemFontOfSize:9];
-        [b setTitle:names[i] forState:UIControlStateNormal]; [b setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
-        [b addTarget:self action:@selector(tab:) forControlEvents:UIControlEventTouchUpInside]; [bar addSubview:b]; [bs addObject:b];
-    }
-    self.tabs=bs;
-    self.content=[[UIScrollView alloc] initWithFrame:CGRectMake(12,101,w-24,h-112)];
-    self.content.showsVerticalScrollIndicator=NO; self.content.alwaysBounceVertical=YES;
-    [self.panel addSubview:self.content];
+    UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(dragPanel:)];
+    [title addGestureRecognizer:pan];
+    title.userInteractionEnabled = YES;
 
-    self.floating=[UIButton buttonWithType:UIButtonTypeSystem]; self.floating.frame=CGRectMake(16,sh*.35,52,52);
-    self.floating.layer.cornerRadius=26; self.floating.backgroundColor=[self purple];
-    self.floating.layer.borderWidth=1.5; self.floating.layer.borderColor=[UIColor colorWithRed:.8 green:.4 blue:1 alpha:1].CGColor;
-    [self.floating setTitle:@"♛\nDB" forState:UIControlStateNormal]; [self.floating setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
-    self.floating.titleLabel.font=[UIFont boldSystemFontOfSize:13]; self.floating.titleLabel.numberOfLines=2;
-    [self.floating addTarget:self action:@selector(openMenu) forControlEvents:UIControlEventTouchUpInside];
-    [self.view addSubview:self.floating];
-    UIPanGestureRecognizer *drag=[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(dragFloating:)];
-    [self.floating addGestureRecognizer:drag];
-    NSString *saved=[[NSUserDefaults standardUserDefaults] stringForKey:DBFloatingButtonPositionKey];
-    if(saved.length){ CGPoint p=CGPointFromString(saved); if(isfinite(p.x)&&isfinite(p.y)&&!CGPointEqualToPoint(p,CGPointZero)) self.floating.center=p; }
-    self.floating.hidden=YES;
-}
-- (void)viewDidLayoutSubviews { [super viewDidLayoutSubviews]; }
-- (void)movePanel:(UIPanGestureRecognizer *)g {
-    CGPoint d=[g translationInView:self.view]; self.panel.center=CGPointMake(self.panel.center.x+d.x,self.panel.center.y+d.y);
-    [g setTranslation:CGPointZero inView:self.view];
-}
-- (void)dragFloating:(UIPanGestureRecognizer *)g {
-    CGPoint d=[g translationInView:self.view], c=self.floating.center; c.x+=d.x; c.y+=d.y;
-    CGFloat x=self.floating.bounds.size.width/2, y=self.floating.bounds.size.height/2;
-    c.x=MIN(MAX(x,c.x),self.view.bounds.size.width-x); c.y=MIN(MAX(y,c.y),self.view.bounds.size.height-y);
-    self.floating.center=c; [g setTranslation:CGPointZero inView:self.view];
-    if(g.state==UIGestureRecognizerStateEnded || g.state==UIGestureRecognizerStateCancelled)
-        [[NSUserDefaults standardUserDefaults] setObject:NSStringFromCGPoint(c) forKey:DBFloatingButtonPositionKey];
-}
-- (void)openMenu { self.panel.hidden=NO; self.floating.hidden=YES; }
-- (void)closeMenu { self.panel.hidden=YES; self.floating.hidden=NO; }
-- (void)clear { for(UIView *v in [self.content.subviews copy]) [v removeFromSuperview]; self.content.contentOffset=CGPointZero; }
-- (UILabel *)label:(NSString *)s y:(CGFloat)y height:(CGFloat)h {
-    UILabel *l=[[UILabel alloc] initWithFrame:CGRectMake(6,y,self.content.bounds.size.width-12,h)];
-    l.text=s; l.textColor=UIColor.whiteColor; l.font=[UIFont systemFontOfSize:11 weight:UIFontWeightMedium]; l.numberOfLines=0;
-    [self.content addSubview:l]; return l;
-}
-- (UIButton *)button:(NSString *)s y:(CGFloat)y action:(SEL)a {
-    UIButton *b=[UIButton buttonWithType:UIButtonTypeSystem]; b.frame=CGRectMake(5,y,self.content.bounds.size.width-10,42);
-    b.backgroundColor=[self purple]; b.layer.cornerRadius=13; b.layer.borderWidth=1;
-    b.layer.borderColor=[UIColor colorWithRed:.75 green:.42 blue:1 alpha:1].CGColor;
-    [b setTitle:s forState:UIControlStateNormal]; [b setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
-    b.titleLabel.font=[UIFont boldSystemFontOfSize:11]; [b addTarget:self action:a forControlEvents:UIControlEventTouchUpInside];
-    [self.content addSubview:b]; return b;
-}
-- (void)finish:(CGFloat)y { self.content.contentSize=CGSizeMake(self.content.bounds.size.width,MAX(y+12,self.content.bounds.size.height+1)); }
-- (void)tab:(UIButton *)b {
-    switch(b.tag){case 0:[self home];break;case 1:[self qrPage];break;case 2:[self mediaPage];break;case 3:[self settings];break;case 4:[self info];break;}
-}
-- (void)home {
-    [self clear]; CGFloat w=self.content.bounds.size.width;
-    [self label:@"DOXBON VIP CONTROL CENTER" y:5 height:25];
-    [self label:[NSString stringWithFormat:@"License: %@  •  %@",self.activeKey?@"ACTIVE":@"NOT ACTIVE",self.expiryText?:@"—"] y:32 height:25];
-    [self button:@"QR LAB — QUÉT VÀ GHÉP QR / CLIP" y:68 action:@selector(qrPage)];
-    [self button:@"ONE TOUCH — CHỌN ẢNH" y:118 action:@selector(oneTouch)];
-    [self button:@"REPLACE MEDIA — CHỌN VIDEO / ẢNH" y:168 action:@selector(replaceMedia)];
-    [self button:@"SEQUENTIAL EXPORT QUEUE" y:218 action:@selector(exportPage)];
-    [self label:@"Lưu ý: thao tác chèn/thay clip và lệnh export bên trong Video Star chưa được gọi vì cần xác minh API private của đúng phiên bản app." y:270 height:65];
-    [self finish:345];
-}
-- (void)qrPage {
-    [self clear]; [self label:@"QR LAB" y:4 height:24];
-    [self label:@"Bước 1: chọn ảnh chứa QR. Bước 2: chọn video gán cho từng QR trong danh sách." y:30 height:45];
-    [self button:@"1. QUÉT ẢNH QR (TỐI ĐA 30)" y:82 action:@selector(scanQR)];
-    [self button:@"2. GÁN VIDEO CHO QR" y:132 action:@selector(assignVideos)];
-    [self button:@"3. XEM HÀNG ĐỢI XUẤT" y:182 action:@selector(exportPage)];
-    CGFloat y=238;
-    for(NSDictionary *j in self.jobs){
-        NSString *qr=j[@"qr"]?:@"(QR)";
-        NSString *clip=j[@"clipName"]?:@"Chưa gán clip";
-        [self label:[NSString stringWithFormat:@"QR: %@\nClip: %@\n%@",qr,clip,[j[@"done"] boolValue]?@"ĐÃ ĐÁNH DẤU XUẤT":@"CHỜ XUẤT"] y:y height:54]; y+=58;
+    self.tabBar = [[UIScrollView alloc] initWithFrame:CGRectMake(12, 58, panelW-24, 44)];
+    self.tabBar.showsHorizontalScrollIndicator = NO;
+    self.tabBar.scrollEnabled = NO;
+    self.tabBar.backgroundColor = [UIColor colorWithWhite:1 alpha:.045];
+    self.tabBar.layer.cornerRadius = 17;
+    [self.panel addSubview:self.tabBar];
+
+    NSArray *names = @[@"â\nHOME", @"â¦\nQR LAB", @"â·\nMEDIA", @"â\nSETTINGS", @"â\nINFO"];
+    NSMutableArray *buttons = [NSMutableArray array];
+    CGFloat gap = 4.0;
+    CGFloat tabW = floor((panelW-30.0-gap*4.0)/5.0);
+    for (NSUInteger i=0; i<names.count; i++) {
+        UIButton *b = [UIButton buttonWithType:UIButtonTypeSystem];
+        b.frame = CGRectMake(3 + i*(tabW+gap), 3, tabW, 38);
+        b.tag = i;
+        b.layer.cornerRadius = 14;
+        b.titleLabel.font = [UIFont systemFontOfSize:9 weight:UIFontWeightBold];
+        b.titleLabel.numberOfLines = 2;
+        b.titleLabel.textAlignment = NSTextAlignmentCenter;
+        b.titleLabel.lineBreakMode = NSLineBreakByWordWrapping;
+        b.titleLabel.adjustsFontSizeToFitWidth = YES;
+        b.titleLabel.minimumScaleFactor = .8;
+        [b setTitle:names[i] forState:UIControlStateNormal];
+        [b setTitleColor:[UIColor colorWithWhite:1 alpha:.72] forState:UIControlStateNormal];
+        [b addTarget:self action:@selector(tabPressed:) forControlEvents:UIControlEventTouchUpInside];
+        [self.tabBar addSubview:b];
+        [buttons addObject:b];
     }
-    [self finish:y];
-}
-- (void)mediaPage {
-    [self clear]; [self label:@"MEDIA TOOLS" y:5 height:24];
-    [self label:@"Chọn asset để chuẩn bị. Bản này chưa tự thay asset trong project Video Star." y:32 height:45];
-    [self button:@"ONE TOUCH — CHỌN ẢNH" y:88 action:@selector(oneTouch)];
-    [self button:@"REPLACE MEDIA — CHỌN VIDEO / ẢNH" y:138 action:@selector(replaceMedia)];
-    [self finish:200];
-}
-- (void)settings {
-    [self clear]; [self label:@"SETTINGS" y:5 height:24];
-    [self label:[NSString stringWithFormat:@"TikTok: %@\nZalo: %@\nKey: %@\nExpiry: %@",DBTikTok,DBZalo,self.activeKey?:@"—",self.expiryText?:@"—"] y:35 height:85];
-    [self button:@"CHECK / RE-AUTHENTICATE KEY" y:128 action:@selector(recheck)];
-    [self button:@"LOG OUT" y:178 action:@selector(logout)];
-    [self finish:235];
-}
-- (void)info {
-    [self clear]; [self label:@"DOXBON VDS TOOL\nPURPLE NEON EDITION\n\nQR scan: Apple Vision\nQR ↔ clip mapping: local persistent queue\nExport queue: sequential manual confirmation\nTimeline hooks: disabled pending runtime signature verification." y:5 height:180]; [self finish:200];
-}
-- (void)showAlert:(NSString *)s {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIViewController *p=self; while(p.presentedViewController) p=p.presentedViewController;
-        UIAlertController *a=[UIAlertController alertControllerWithTitle:@"DOXBON VDS" message:s preferredStyle:UIAlertControllerStyleAlert];
-        [a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-        [p presentViewController:a animated:YES completion:nil];
-    });
-}
-- (void)saveJobs {
-    [[NSUserDefaults standardUserDefaults] setObject:self.jobs forKey:DBQRJobsKey];
-}
-- (void)presentPicker:(NSString *)purpose filter:(PHPickerFilter *)filter limit:(NSInteger)limit {
-    PHPickerConfiguration *c=[[PHPickerConfiguration alloc] init]; c.filter=filter; c.selectionLimit=limit;
-    PHPickerViewController *p=[[PHPickerViewController alloc] initWithConfiguration:c]; p.delegate=self;
-    self.pickerPurpose=purpose; [self presentViewController:p animated:YES completion:nil];
-}
-- (void)scanQR { [self presentPicker:@"qr" filter:PHPickerFilter.imagesFilter limit:30]; }
-- (void)assignVideos {
-    if(!self.jobs.count){[self showAlert:@"Hãy quét QR trước."];return;}
-    [self presentPicker:@"videos" filter:PHPickerFilter.videosFilter limit:30];
-}
-- (void)oneTouch { [self presentPicker:@"image" filter:PHPickerFilter.imagesFilter limit:1]; }
-- (void)replaceMedia { [self presentPicker:@"replace" filter:[PHPickerFilter anyFilterMatchingSubfilters:@[PHPickerFilter.imagesFilter,PHPickerFilter.videosFilter]] limit:1]; }
-- (void)picker:(PHPickerViewController *)picker didFinishPicking:(NSArray<PHPickerResult *> *)results API_AVAILABLE(ios(14.0)) {
-    NSString *purpose=self.pickerPurpose; [picker dismissViewControllerAnimated:YES completion:^{
-        if(!results.count)return;
-        if([purpose isEqual:@"qr"]){ [self scanResults:results index:0]; return; }
-        if([purpose isEqual:@"videos"]){ [self loadVideoResults:results index:0]; return; }
-        NSItemProvider *p=results.firstObject.itemProvider;
-        if([p canLoadObjectOfClass:UIImage.class]){
-            [p loadObjectOfClass:UIImage.class completionHandler:^(id obj,NSError *e){
-                dispatch_async(dispatch_get_main_queue(),^{ [self showAlert:e?@"Không đọc được asset.":([purpose isEqual:@"image"]?@"Đã chọn ảnh. Chưa chèn tự động vào timeline.":@"Đã chọn media. Chưa thay tự động trong timeline.")]; });
-            }];
-        } else [self showAlert:@"Định dạng chưa hỗ trợ."];
-    }];
-}
-- (void)scanResults:(NSArray<PHPickerResult *> *)r index:(NSUInteger)i {
-    if(i>=r.count){[self saveJobs];[self qrPage];[self showAlert:[NSString stringWithFormat:@"Đã quét xong. Tìm thấy %lu QR.",(unsigned long)self.jobs.count]];return;}
-    NSItemProvider *p=r[i].itemProvider;
-    if(![p canLoadObjectOfClass:UIImage.class]){[self scanResults:r index:i+1];return;}
-    [p loadObjectOfClass:UIImage.class completionHandler:^(id obj,NSError *e){
-        if(!e && [obj isKindOfClass:UIImage.class]){
-            UIImage *im=obj;
-            VNDetectBarcodesRequest *req=[VNDetectBarcodesRequest new]; req.symbologies=@[VNBarcodeSymbologyQR];
-            VNImageRequestHandler *h=[[VNImageRequestHandler alloc] initWithCGImage:im.CGImage options:@{}];
-            [h performRequests:@[req] error:nil];
-            for(VNBarcodeObservation *o in req.results){
-                NSString *code=o.payloadStringValue;
-                if(code.length){
-                    BOOL exists=NO; for(NSDictionary *j in self.jobs) if([j[@"qr"] isEqual:code]){exists=YES;break;}
-                    if(!exists)[self.jobs addObject:[@{@"qr":code,@"clipName":@"",@"clipID":@"",@"done":@NO} mutableCopy]];
-                }
-            }
+    self.tabButtons = buttons;
+    self.tabBar.contentSize = CGSizeMake(panelW-24, 44);
+
+    self.contentScroll = [[UIScrollView alloc] initWithFrame:CGRectMake(13, 110, panelW-26, panelH-122)];
+    self.contentScroll.alwaysBounceVertical = YES;
+    self.contentScroll.showsVerticalScrollIndicator = NO;
+    self.contentScroll.keyboardDismissMode = UIScrollViewKeyboardDismissModeOnDrag;
+    [self.panel addSubview:self.contentScroll];
+    self.contentView = self.contentScroll;
+
+    self.floatingButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.floatingButton.frame = CGRectMake(16, MAX(100, screenH*.32), 50, 50);
+    self.floatingButton.layer.cornerRadius = 25;
+    self.floatingButton.backgroundColor = [UIColor colorWithRed:.30 green:.08 blue:.65 alpha:.98];
+    self.floatingButton.layer.borderWidth = 1.7;
+    self.floatingButton.layer.borderColor = [UIColor colorWithRed:.78 green:.32 blue:1 alpha:1].CGColor;
+    self.floatingButton.layer.shadowColor = [UIColor colorWithRed:.68 green:.12 blue:1 alpha:1].CGColor;
+    self.floatingButton.layer.shadowOpacity = .9;
+    self.floatingButton.layer.shadowRadius = 15;
+    [self.floatingButton setTitle:@"â\nDB" forState:UIControlStateNormal];
+    [self.floatingButton setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
+    self.floatingButton.titleLabel.font = [UIFont systemFontOfSize:14 weight:UIFontWeightBlack];
+    self.floatingButton.titleLabel.numberOfLines = 2;
+    self.floatingButton.titleLabel.textAlignment = NSTextAlignmentCenter;
+    [self.floatingButton addTarget:self action:@selector(openMenu) forControlEvents:UIControlEventTouchUpInside];
+    // Drag the collapsed icon anywhere on screen; a normal tap still opens the menu.
+    UIPanGestureRecognizer *iconPan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(dragFloatingButton:)];
+    iconPan.minimumNumberOfTouches = 1;
+    [self.floatingButton addGestureRecognizer:iconPan];
+    [self.view addSubview:self.floatingButton];
+    NSString *savedPosition = [[NSUserDefaults standardUserDefaults] stringForKey:DBFloatingButtonPositionKey];
+    if (savedPosition.length) {
+        CGPoint point = CGPointFromString(savedPosition);
+        if (isfinite(point.x) && isfinite(point.y) && !CGPointEqualToPoint(point, CGPointZero)) {
+            self.floatingButton.center = point;
         }
-        [self scanResults:r index:i+1];
+    }
+    self.floatingButton.hidden = YES;
+    self.tabBar.hidden = YES;
+}
+
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+    self.panelGradient.frame = self.panel.bounds;
+}
+
+- (void)dragFloatingButton:(UIPanGestureRecognizer *)gesture {
+    CGPoint delta = [gesture translationInView:self.view];
+    CGPoint center = self.floatingButton.center;
+    center.x += delta.x;
+    center.y += delta.y;
+    CGFloat halfW = CGRectGetWidth(self.floatingButton.bounds) * 0.5;
+    CGFloat halfH = CGRectGetHeight(self.floatingButton.bounds) * 0.5;
+    CGFloat width = CGRectGetWidth(self.view.bounds);
+    CGFloat height = CGRectGetHeight(self.view.bounds);
+    center.x = MIN(MAX(halfW, center.x), MAX(halfW, width-halfW));
+    center.y = MIN(MAX(halfH, center.y), MAX(halfH, height-halfH));
+    self.floatingButton.center = center;
+    [gesture setTranslation:CGPointZero inView:self.view];
+    if (gesture.state == UIGestureRecognizerStateEnded || gesture.state == UIGestureRecognizerStateCancelled) {
+        [[NSUserDefaults standardUserDefaults] setObject:NSStringFromCGPoint(self.floatingButton.center)
+                                                  forKey:DBFloatingButtonPositionKey];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+    }
+}
+
+- (void)dragPanel:(UIPanGestureRecognizer *)gesture {
+    CGPoint delta = [gesture translationInView:self.view];
+    self.panel.center = CGPointMake(self.panel.center.x + delta.x,
+                                    self.panel.center.y + delta.y);
+    // Use CGPointMake instead of CGPointZero to avoid the unresolved linker symbol.
+    [gesture setTranslation:CGPointMake(0.0, 0.0) inView:self.view];
+}
+
+- (UIButton *)button:(NSString *)title frame:(CGRect)frame action:(SEL)action {
+    UIButton *b = [UIButton buttonWithType:UIButtonTypeSystem];
+    b.frame = frame;
+    b.backgroundColor = [UIColor colorWithRed:.27 green:.075 blue:.62 alpha:.98];
+    b.layer.cornerRadius = 18;
+    b.layer.borderWidth = 1;
+    b.layer.borderColor = [UIColor colorWithRed:.58 green:.28 blue:1 alpha:.92].CGColor;
+    b.layer.shadowColor = [UIColor colorWithRed:.48 green:.12 blue:1 alpha:1].CGColor;
+    b.layer.shadowOpacity = .28;
+    b.layer.shadowRadius = 9;
+    [b setTitle:title forState:UIControlStateNormal];
+    [b setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
+    b.titleLabel.font = [UIFont systemFontOfSize:10 weight:UIFontWeightBold];
+    b.titleLabel.adjustsFontSizeToFitWidth = YES;
+    b.titleLabel.minimumScaleFactor = .75;
+    [b addTarget:self action:action forControlEvents:UIControlEventTouchUpInside];
+    [self.contentView addSubview:b];
+    return b;
+}
+
+- (UILabel *)label:(NSString *)text frame:(CGRect)frame size:(CGFloat)size color:(UIColor *)color {
+    UILabel *label = [[UILabel alloc] initWithFrame:frame];
+    label.text = text;
+    label.textColor = color;
+    label.font = [UIFont systemFontOfSize:size weight:UIFontWeightMedium];
+    label.numberOfLines = 0;
+    [self.contentView addSubview:label];
+    return label;
+}
+
+- (void)updateTabSelection:(NSInteger)selected {
+    [self.tabButtons enumerateObjectsUsingBlock:^(UIButton *button, NSUInteger idx, BOOL *stop) {
+        BOOL active = ((NSInteger)idx == selected);
+        button.backgroundColor = active
+            ? [UIColor colorWithRed:.55 green:.16 blue:.92 alpha:.98]
+            : [UIColor colorWithWhite:1 alpha:.025];
+        button.layer.borderWidth = active ? 0.8 : 0.4;
+        button.layer.borderColor = active
+            ? [UIColor colorWithRed:.80 green:.42 blue:1 alpha:.95].CGColor
+            : [UIColor colorWithWhite:1 alpha:.08].CGColor;
+        button.layer.shadowColor = [UIColor colorWithRed:.62 green:.16 blue:1 alpha:1].CGColor;
+        button.layer.shadowOpacity = active ? .45 : 0;
+        button.layer.shadowRadius = active ? 9 : 0;
+        [button setTitleColor:active ? UIColor.whiteColor : [UIColor colorWithWhite:1 alpha:.66]
+                     forState:UIControlStateNormal];
     }];
 }
-- (void)loadVideoResults:(NSArray<PHPickerResult *> *)r index:(NSUInteger)i {
-    if(i>=r.count){[self saveJobs];[self qrPage];[self showAlert:@"Đã lưu các clip đã chọn vào danh sách. Hãy kiểm tra thứ tự ghép QR–clip."];return;}
-    if(i>=self.jobs.count){[self showAlert:@"Số video nhiều hơn số QR. Những video dư chưa được gán."];return;}
-    NSItemProvider *p=r[i].itemProvider;
-    if([p hasItemConformingToTypeIdentifier:@"public.movie"]){
-        [p loadFileRepresentationForTypeIdentifier:@"public.movie" completionHandler:^(NSURL *url,NSError *e){
-            NSString *name=url.lastPathComponent?:[NSString stringWithFormat:@"Video %lu",(unsigned long)i+1];
-            NSString *identifier=r[i].assetIdentifier?:[[NSUUID UUID] UUIDString];
-            dispatch_async(dispatch_get_main_queue(), ^{
-                NSMutableDictionary *j=self.jobs[i];
-                j[@"clipName"]=name; j[@"clipID"]=identifier; j[@"done"]=@NO;
-                [self loadVideoResults:r index:i+1];
-            });
-        }];
-    } else [self loadVideoResults:r index:i+1];
-}
-- (void)exportPage {
-    [self clear]; [self label:@"SEQUENTIAL EXPORT" y:5 height:24];
-    [self label:@"Xuất từng clip trong Video Star theo thứ tự QR. Sau khi tự xuất xong một clip, bấm nút bên dưới để chuyển sang clip tiếp theo. Nút này không giả lập lệnh export của Video Star." y:32 height:70];
-    NSInteger next=-1; for(NSInteger i=0;i<(NSInteger)self.jobs.count;i++) if(![self.jobs[i][@"done"] boolValue]){next=i;break;}
-    if(next<0){[self label:@"Không còn clip chờ xuất. Hãy quét QR và gán video mới." y:112 height:40];[self finish:165];return;}
-    self.exportIndex=next;
-    NSDictionary *j=self.jobs[next];
-    [self label:[NSString stringWithFormat:@"CLIP %ld / %lu\nQR: %@\nVideo: %@",(long)next+1,(unsigned long)self.jobs.count,j[@"qr"],[j[@"clipName"] length]?j[@"clipName"]:@"Chưa gán video"] y:112 height:75];
-    [self button:@"ĐÁNH DẤU ĐÃ XUẤT — CLIP TIẾP THEO" y:198 action:@selector(markExported)];
-    [self button:@"LÀM LẠI HÀNG ĐỢI (RESET)" y:248 action:@selector(resetExport)];
-    [self finish:310];
-}
-- (void)markExported {
-    if(self.exportIndex<0 || self.exportIndex>=self.jobs.count)return;
-    self.jobs[self.exportIndex][@"done"]=@YES; [self saveJobs]; [self exportPage];
-}
-- (void)resetExport { for(NSMutableDictionary *j in self.jobs) j[@"done"]=@NO; [self saveJobs]; [self exportPage]; }
 
-#pragma mark - VIP license
-- (void)request:(NSString *)url key:(NSString *)key completion:(void (^)(NSDictionary *,NSError *))done {
-    NSMutableURLRequest *r=[NSMutableURLRequest requestWithURL:[NSURL URLWithString:url]];
-    r.HTTPMethod=@"POST"; r.timeoutInterval=20; [r setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
-    r.HTTPBody=[NSJSONSerialization dataWithJSONObject:@{@"key":key,@"device_id":UIDevice.currentDevice.identifierForVendor.UUIDString?:@"unknown-device"} options:0 error:nil];
-    [[[NSURLSession sharedSession] dataTaskWithRequest:r completionHandler:^(NSData *d,NSURLResponse *resp,NSError *e){
-        id o=d.length?[NSJSONSerialization JSONObjectWithData:d options:0 error:nil]:nil;
-        done([o isKindOfClass:NSDictionary.class]?o:nil,e);
+- (void)tabPressed:(UIButton *)sender {
+    switch (sender.tag) {
+        case 0: [self showFeatures]; break;
+        case 1: [self showQRTab]; break;
+        case 2: [self showMediaTab]; break;
+        case 3: [self showSettings]; break;
+        case 4: [self showAboutTab]; break;
+        default: break;
+    }
+}
+
+- (void)showLogin {
+    self.tabBar.hidden = YES;
+    self.headerSubtitle.text = @"LICENSE AUTHENTICATION";
+    for (UIView *v in self.contentView.subviews) [v removeFromSuperview];
+    self.contentScroll.contentSize = self.contentScroll.bounds.size;
+
+    UILabel *hint = [[UILabel alloc] initWithFrame:CGRectMake(8,24,self.contentView.bounds.size.width-16,30)];
+    hint.text = @"Nháº­p VIP Key Äá» tiáº¿p tá»¥c";
+    hint.textColor = UIColor.whiteColor;
+    hint.textAlignment = NSTextAlignmentCenter;
+    hint.font = [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold];
+    [self.contentView addSubview:hint];
+
+    self.keyField = [[UITextField alloc] initWithFrame:CGRectMake(8,76,self.contentView.bounds.size.width-16,42)];
+    self.keyField.placeholder = @"DB-XXXX-XXXX";
+    self.keyField.textColor = UIColor.whiteColor;
+    self.keyField.tintColor = UIColor.purpleColor;
+    self.keyField.autocapitalizationType = UITextAutocapitalizationTypeAllCharacters;
+    self.keyField.borderStyle = UITextBorderStyleRoundedRect;
+    self.keyField.backgroundColor = [UIColor colorWithWhite:1 alpha:.10];
+    self.keyField.attributedPlaceholder = [[NSAttributedString alloc] initWithString:@"DB-XXXX-XXXX"
+        attributes:@{NSForegroundColorAttributeName:[UIColor colorWithWhite:1 alpha:.55]}];
+    [self.contentView addSubview:self.keyField];
+
+    [self button:@"XÃC NHáº¬N KEY" frame:CGRectMake(8,132,self.contentView.bounds.size.width-16,42) action:@selector(validateKey)];
+
+    self.statusLabel = [[UILabel alloc] initWithFrame:CGRectMake(8,188,self.contentView.bounds.size.width-16,42)];
+    self.statusLabel.text = @"Káº¿t ná»i mÃ¡y chá»§ Äá» xÃ¡c thá»±c";
+    self.statusLabel.textColor = [UIColor colorWithWhite:1 alpha:.7];
+    self.statusLabel.font = [UIFont systemFontOfSize:12];
+    self.statusLabel.textAlignment = NSTextAlignmentCenter;
+    self.statusLabel.numberOfLines = 2;
+    [self.contentView addSubview:self.statusLabel];
+}
+
+- (void)sendLicenseRequestTo:(NSString *)endpoint
+                         key:(NSString *)key
+                    deviceID:(NSString *)deviceID
+                  completion:(void (^)(NSDictionary *json, NSError *error))completion {
+    NSURL *url = [NSURL URLWithString:endpoint];
+    if (!url) {
+        NSError *e = [NSError errorWithDomain:@"DoxBonLicense" code:1
+                                     userInfo:@{NSLocalizedDescriptionKey:@"Äá»a chá» API khÃ´ng há»£p lá»."}];
+        completion(nil, e);
+        return;
+    }
+
+    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:url];
+    req.HTTPMethod = @"POST";
+    req.timeoutInterval = 20;
+    [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    [req setValue:@"application/json" forHTTPHeaderField:@"Accept"];
+
+    NSDictionary *payload = @{@"key":key, @"device_id":deviceID};
+    NSError *serializationError = nil;
+    req.HTTPBody = [NSJSONSerialization dataWithJSONObject:payload options:0 error:&serializationError];
+    if (serializationError || !req.HTTPBody) {
+        completion(nil, serializationError);
+        return;
+    }
+
+    [[[NSURLSession sharedSession] dataTaskWithRequest:req
+                                     completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        NSDictionary *json = nil;
+        if (data.length) {
+            id object = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+            if ([object isKindOfClass:NSDictionary.class]) json = (NSDictionary *)object;
+        }
+        completion(json, error);
     }] resume];
 }
-- (void)showLogin {
-    [self clear]; self.panel.hidden=NO; self.floating.hidden=YES;
-    [self label:@"Nhập VIP Key để tiếp tục" y:20 height:28];
-    self.keyField=[[UITextField alloc] initWithFrame:CGRectMake(7,57,self.content.bounds.size.width-14,42)];
-    self.keyField.placeholder=@"DB-XXXX-XXXX"; self.keyField.textColor=UIColor.whiteColor;
-    self.keyField.backgroundColor=[UIColor colorWithWhite:1 alpha:.12]; self.keyField.borderStyle=UITextBorderStyleRoundedRect;
-    self.keyField.autocapitalizationType=UITextAutocapitalizationTypeAllCharacters; [self.content addSubview:self.keyField];
-    [self button:@"XÁC NHẬN KEY" y:111 action:@selector(validateKey)];
-    self.status=[[UILabel alloc] initWithFrame:CGRectMake(8,164,self.content.bounds.size.width-16,55)];
-    self.status.textColor=UIColor.whiteColor; self.status.font=[UIFont systemFontOfSize:11]; self.status.numberOfLines=0;
-    [self.content addSubview:self.status]; [self finish:235];
-}
+
 - (void)validateKey {
-    NSString *key=[[self.keyField.text?:@"" stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet] uppercaseString];
-    if(key.length<8){self.status.text=@"Vui lòng nhập VIP Key hợp lệ.";return;}
-    self.status.text=@"Đang xác thực...";
-    [self request:DBLicenseActivateEndpoint key:key completion:^(NSDictionary *a,NSError *e){
-        if(e || ![a[@"ok"] boolValue]){dispatch_async(dispatch_get_main_queue(),^{self.status.text=e?@"Không kết nối được máy chủ.":(a[@"error"]?:@"Kích hoạt thất bại.");});return;}
-        [self request:DBLicenseValidateEndpoint key:key completion:^(NSDictionary *v,NSError *ve){
-            dispatch_async(dispatch_get_main_queue(), ^{
-                if(!ve && [v[@"ok"] boolValue] && [v[@"status"] isEqual:@"active"]){
-                    self.activeKey=key; [[NSUserDefaults standardUserDefaults] setObject:key forKey:DBSavedLicenseKey];
-                    id exp=v[@"expires_at"]; self.expiryText=([exp respondsToSelector:@selector(longLongValue)] && [exp longLongValue]>0)?[NSDateFormatter localizedStringFromDate:[NSDate dateWithTimeIntervalSince1970:[exp longLongValue]] dateStyle:NSDateFormatterMediumStyle timeStyle:NSDateFormatterNoStyle]:@"Vĩnh viễn";
-                    [self home];
-                } else self.status.text=ve?@"Không kết nối được máy chủ.":(v[@"error"]?:@"Key không hợp lệ hoặc hết hạn.");
-            });
-        }];
-    }];
-}
-- (void)restoreKey {
-    NSString *k=[[NSUserDefaults standardUserDefaults] stringForKey:DBSavedLicenseKey]; if(k.length<8)return;
-    self.keyField.text=k; self.status.text=@"Đang kiểm tra key đã lưu...";
-    [self request:DBLicenseValidateEndpoint key:k completion:^(NSDictionary *v,NSError *e){
+    NSString *rawKey = self.keyField.text;
+    if (rawKey == nil) {
+        rawKey = @"";
+    }
+
+    NSString *trimmedKey = [rawKey stringByTrimmingCharactersInSet:
+        [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    NSString *key = [trimmedKey uppercaseString];
+    if (key.length < 8) {
+        self.statusLabel.text = @"Vui lÃ²ng nháº­p VIP Key há»£p lá».";
+        return;
+    }
+
+    self.statusLabel.text = @"Äang kÃ­ch hoáº¡t thiáº¿t bá»...";
+    NSString *deviceID = UIDevice.currentDevice.identifierForVendor.UUIDString ?: @"unknown-device";
+
+    [self sendLicenseRequestTo:DBLicenseActivateEndpoint key:key deviceID:deviceID
+                    completion:^(NSDictionary *activation, NSError *activationError) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            if(!e && [v[@"ok"] boolValue] && [v[@"status"] isEqual:@"active"]){
-                self.activeKey=k; id exp=v[@"expires_at"];
-                self.expiryText=([exp respondsToSelector:@selector(longLongValue)] && [exp longLongValue]>0)?[NSDateFormatter localizedStringFromDate:[NSDate dateWithTimeIntervalSince1970:[exp longLongValue]] dateStyle:NSDateFormatterMediumStyle timeStyle:NSDateFormatterNoStyle]:@"Vĩnh viễn";
-                [self home];
-            } else if(!e){[[NSUserDefaults standardUserDefaults] removeObjectForKey:DBSavedLicenseKey];self.status.text=@"Key đã hết hạn hoặc không hợp lệ.";}
-            else self.status.text=@"Mất kết nối. Key vẫn được giữ để thử lại.";
+            BOOL activated = !activationError && [activation[@"ok"] respondsToSelector:@selector(boolValue)]
+                             && [activation[@"ok"] boolValue];
+            if (!activated) {
+                NSString *message = [activation[@"error"] isKindOfClass:NSString.class]
+                                    ? activation[@"error"] : @"KhÃ´ng thá» kÃ­ch hoáº¡t key.";
+                self.statusLabel.text = activationError ? @"KhÃ´ng káº¿t ná»i ÄÆ°á»£c mÃ¡y chá»§." : message;
+                return;
+            }
+
+            self.statusLabel.text = @"Äang kiá»m tra giáº¥y phÃ©p...";
+            [self sendLicenseRequestTo:DBLicenseValidateEndpoint key:key deviceID:deviceID
+                            completion:^(NSDictionary *validation, NSError *validationError) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    BOOL valid = !validationError && [validation[@"ok"] respondsToSelector:@selector(boolValue)]
+                                 && [validation[@"ok"] boolValue]
+                                 && [@"active" isEqualToString:validation[@"status"]];
+                    if (valid) {
+                        self.activeKey = key;
+                        [[NSUserDefaults standardUserDefaults] setObject:key forKey:DBSavedLicenseKey];
+                        [[NSUserDefaults standardUserDefaults] synchronize];
+                        id expiry = validation[@"expires_at"];
+                        if ([expiry respondsToSelector:@selector(longLongValue)] && [expiry longLongValue] > 0) {
+                            NSDate *date = [NSDate dateWithTimeIntervalSince1970:[expiry longLongValue]];
+                            NSDateFormatter *formatter = [NSDateFormatter new];
+                            formatter.dateStyle = NSDateFormatterMediumStyle;
+                            formatter.timeStyle = NSDateFormatterNoStyle;
+                            self.expiryText = [formatter stringFromDate:date];
+                        } else {
+                            self.expiryText = @"VÄ©nh viá»n";
+                        }
+                        [self showDashboardWithExpiry:self.expiryText];
+                    } else {
+                        NSString *message = [validation[@"error"] isKindOfClass:NSString.class]
+                                            ? validation[@"error"] : @"Key khÃ´ng há»£p lá» hoáº·c ÄÃ£ háº¿t háº¡n.";
+                        self.statusLabel.text = validationError ? @"KhÃ´ng káº¿t ná»i ÄÆ°á»£c mÃ¡y chá»§." : message;
+                    }
+                });
+            }];
         });
     }];
 }
-- (void)recheck { if(!self.activeKey.length){[self showLogin];return;} self.keyField.text=self.activeKey; [self validateKey]; }
-- (void)logout { self.activeKey=nil; self.expiryText=nil; [[NSUserDefaults standardUserDefaults] removeObjectForKey:DBSavedLicenseKey]; [self showLogin]; }
-@end
 
-static DBPassthroughWindow *DBWindow;
-static void DBPresentMenu(void) {
+- (void)restoreSavedLicenseKey {
+    NSString *savedKey = [[NSUserDefaults standardUserDefaults] stringForKey:DBSavedLicenseKey];
+    if (![savedKey isKindOfClass:NSString.class] || savedKey.length < 8) return;
+    self.keyField.text = savedKey;
+    self.statusLabel.text = @"Äang kiá»m tra láº¡i VIP Key ÄÃ£ lÆ°u...";
+    NSString *deviceID = UIDevice.currentDevice.identifierForVendor.UUIDString ?: @"unknown-device";
+    [self sendLicenseRequestTo:DBLicenseValidateEndpoint key:savedKey deviceID:deviceID
+                    completion:^(NSDictionary *validation, NSError *error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            BOOL valid = !error && [validation[@"ok"] respondsToSelector:@selector(boolValue)]
+                         && [validation[@"ok"] boolValue]
+                         && [@"active" isEqualToString:validation[@"status"]];
+            if (!valid) {
+                // Keep the key in the field so the user can retry if the server was offline.
+                self.statusLabel.text = error ? @"KhÃ´ng káº¿t ná»i ÄÆ°á»£c mÃ¡y chá»§. Key váº«n ÄÆ°á»£c giá»¯ láº¡i." : @"Key khÃ´ng cÃ²n hoáº¡t Äá»ng. Vui lÃ²ng nháº­p key khÃ¡c.";
+                if (!error) {
+                    [[NSUserDefaults standardUserDefaults] removeObjectForKey:DBSavedLicenseKey];
+                    [[NSUserDefaults standardUserDefaults] synchronize];
+                }
+                return;
+            }
+            self.activeKey = savedKey;
+            id expiry = validation[@"expires_at"];
+            if ([expiry respondsToSelector:@selector(longLongValue)] && [expiry longLongValue] > 0) {
+                NSDate *date = [NSDate dateWithTimeIntervalSince1970:[expiry longLongValue]];
+                NSDateFormatter *formatter = [NSDateFormatter new];
+                formatter.dateStyle = NSDateFormatterMediumStyle;
+                formatter.timeStyle = NSDateFormatterNoStyle;
+                self.expiryText = [formatter stringFromDate:date];
+            } else {
+                self.expiryText = @"VÄ©nh viá»n";
+            }
+            [self showDashboardWithExpiry:self.expiryText];
+        });
+    }];
+}
+
+- (void)showDashboardWithExpiry:(NSString *)expiry {
+    self.expiryText = expiry ?: @"KhÃ´ng xÃ¡c Äá»nh";
+    self.tabBar.hidden = NO;
+    self.headerSubtitle.text = @"VIP ACCESS  â¢  PROTECTED SESSION";
+    [self showFeatures];
+}
+
+- (void)clearDashboardContent {
+    for (UIView *v in [self.contentView.subviews copy]) [v removeFromSuperview];
+    self.contentScroll.contentOffset = CGPointZero;
+}
+
+- (void)finishContentAtY:(CGFloat)y {
+    self.contentScroll.contentSize = CGSizeMake(self.contentScroll.bounds.size.width, MAX(y+12, self.contentScroll.bounds.size.height+1));
+}
+
+- (void)showFeatures {
+    [self updateTabSelection:0];
+    [self clearDashboardContent];
+    CGFloat w = self.contentView.bounds.size.width;
+
+    UIView *sectionMark = [[UIView alloc] initWithFrame:CGRectMake(5, 5, 4, 17)];
+    sectionMark.backgroundColor = [UIColor colorWithRed:.72 green:.24 blue:1 alpha:1];
+    sectionMark.layer.cornerRadius = 2;
+    [self.contentView addSubview:sectionMark];
+    [self label:@"CONTROL CENTER" frame:CGRectMake(14,4,w-20,19) size:10 color:[UIColor colorWithWhite:.78 alpha:1]];
+    [self label:@"ChÃ o má»«ng trá» láº¡i DoxBon VIP  â" frame:CGRectMake(8,27,w-16,27) size:14.5 color:UIColor.whiteColor];
+
+    UIView *status = [[UIView alloc] initWithFrame:CGRectMake(5,62,w-10,36)];
+    status.backgroundColor = [UIColor colorWithRed:.025 green:.20 blue:.12 alpha:.78];
+    status.layer.cornerRadius = 18;
+    status.layer.borderWidth = 1.2;
+    status.layer.borderColor = [UIColor colorWithRed:.08 green:.95 blue:.42 alpha:1].CGColor;
+    status.layer.shadowColor = [UIColor colorWithRed:.02 green:.9 blue:.35 alpha:1].CGColor;
+    status.layer.shadowOpacity = .22;
+    status.layer.shadowRadius = 8;
+    [self.contentView addSubview:status];
+    UILabel *st = [[UILabel alloc] initWithFrame:CGRectMake(12,0,status.bounds.size.width-24,36)];
+    st.text = [NSString stringWithFormat:@"â  VIP ACTIVE  â¢  %@                         â", self.expiryText ?: @"VÄ©nh viá»n"];
+    st.font = [UIFont systemFontOfSize:10.5 weight:UIFontWeightBold];
+    st.textColor = [UIColor colorWithRed:.48 green:1 blue:.68 alpha:1];
+    st.adjustsFontSizeToFitWidth = YES;
+    st.minimumScaleFactor = .78;
+    [status addSubview:st];
+
+    UIView *quickMark = [[UIView alloc] initWithFrame:CGRectMake(5,110,4,17)];
+    quickMark.backgroundColor = [UIColor colorWithRed:.72 green:.24 blue:1 alpha:1];
+    quickMark.layer.cornerRadius = 2;
+    [self.contentView addSubview:quickMark];
+    [self label:@"QUICK TOOLS" frame:CGRectMake(14,109,w-20,19) size:10 color:[UIColor colorWithWhite:.78 alpha:1]];
+
+    CGFloat gap = 7;
+    CGFloat cardW = (w-17-gap)/2.0;
+    [self button:@"â¦   BATCH QR     âº" frame:CGRectMake(5,134,cardW,43) action:@selector(startBatchQR)];
+    [self button:@"â§   REPLACE MEDIA  âº" frame:CGRectMake(12+cardW,134,cardW,43) action:@selector(startReplaceMedia)];
+    [self button:@"â¦   ONE-TOUCH    âº" frame:CGRectMake(5,184,cardW,43) action:@selector(startOneTouchMedia)];
+    [self button:@"â   SETTINGS     âº" frame:CGRectMake(12+cardW,184,cardW,43) action:@selector(showSettings)];
+
+    UILabel *tip = [self label:@"â  QR LAB: quÃ©t vÃ  Äá»c mÃ£ QR.\nTá»± nháº­p QR/xuáº¥t video cáº§n xÃ¡c minh API runtime." frame:CGRectMake(12,237,w-24,38) size:9.5 color:[UIColor colorWithWhite:.70 alpha:1]];
+    tip.numberOfLines = 2;
+    [self finishContentAtY:282];
+}
+
+- (void)showQRTab {
+    [self updateTabSelection:1];
+    [self clearDashboardContent];
+    CGFloat w = self.contentView.bounds.size.width;
+    [self label:@"QR LAB" frame:CGRectMake(5,5,w-10,23) size:16 color:[UIColor colorWithRed:.75 green:.56 blue:1 alpha:1]];
+    [self label:@"QuÃ©t mÃ£ QR tá»« nhiá»u áº£nh trong thÆ° viá»n." frame:CGRectMake(5,32,w-10,32) size:10 color:[UIColor colorWithWhite:1 alpha:.65]];
+    [self button:@"â¦  CHá»N NHIá»U áº¢NH Äá» QUÃT QR" frame:CGRectMake(5,78,w-10,48) action:@selector(startBatchQR)];
+    [self label:@"Há» trá»£ tá»i Äa 30 áº£nh má»i lÆ°á»£t. Káº¿t quáº£ ÄÆ°á»£c hiá»n thá» sau khi Vision xá»­ lÃ½ xong." frame:CGRectMake(7,139,w-14,48) size:9 color:[UIColor colorWithWhite:1 alpha:.50]];
+    [self finishContentAtY:205];
+}
+
+- (void)showMediaTab {
+    [self updateTabSelection:2];
+    [self clearDashboardContent];
+    CGFloat w = self.contentView.bounds.size.width;
+    [self label:@"MEDIA TOOLS" frame:CGRectMake(5,5,w-10,23) size:16 color:[UIColor colorWithRed:.48 green:.82 blue:1 alpha:1]];
+    [self label:@"Chá»n áº£nh Äá» chuáº©n bá» thao tÃ¡c. Hai nÃºt dÆ°á»i ÄÃ¢y chÆ°a tá»± sá»­a timeline Video Star." frame:CGRectMake(5,32,w-10,42) size:9 color:[UIColor colorWithWhite:1 alpha:.60]];
+    [self button:@"â§  REPLACE MEDIA  /  CHá»N áº¢NH" frame:CGRectMake(5,88,w-10,48) action:@selector(startReplaceMedia)];
+    [self button:@"â¦  ONE-TOUCH MEDIA  /  CHá»N NHANH" frame:CGRectMake(5,148,w-10,48) action:@selector(startOneTouchMedia)];
+    [self finishContentAtY:215];
+}
+
+- (void)showSettings {
+    [self updateTabSelection:3];
+    [self clearDashboardContent];
+    CGFloat w = self.contentView.bounds.size.width;
+    [self label:@"SETTINGS" frame:CGRectMake(5,5,w-10,23) size:16 color:[UIColor colorWithRed:.75 green:.56 blue:1 alpha:1]];
+    NSArray *lines = @[
+        [NSString stringWithFormat:@"TikTok     %@", DBTikTok],
+        [NSString stringWithFormat:@"Zalo        %@", DBZalo],
+        [NSString stringWithFormat:@"Expires    %@", self.expiryText ?: @"KhÃ´ng xÃ¡c Äá»nh"],
+        [NSString stringWithFormat:@"License    %@", [self maskedKey]]
+    ];
+    CGFloat y=42;
+    for (NSString *line in lines) {
+        UIView *row = [[UIView alloc] initWithFrame:CGRectMake(5,y,w-10,34)];
+        row.backgroundColor = [UIColor colorWithWhite:1 alpha:.055];
+        row.layer.cornerRadius = 8;
+        [self.contentView addSubview:row];
+        UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(9,0,row.bounds.size.width-18,34)];
+        label.text = line;
+        label.textColor = UIColor.whiteColor;
+        label.font = [UIFont systemFontOfSize:10 weight:UIFontWeightMedium];
+        [row addSubview:label];
+        y += 41;
+    }
+    [self button:@"CHECK KEY" frame:CGRectMake(5,y+8,(w-18)/2,40) action:@selector(recheckKey)];
+    [self button:@"LOG OUT" frame:CGRectMake(13+(w-18)/2,y+8,(w-18)/2,40) action:@selector(logout)];
+    [self finishContentAtY:y+62];
+}
+
+- (void)showAboutTab {
+    [self updateTabSelection:4];
+    [self clearDashboardContent];
+    CGFloat w = self.contentView.bounds.size.width;
+    [self label:@"DOXBON VDS TOOL" frame:CGRectMake(5,5,w-10,24) size:16 color:[UIColor colorWithRed:.80 green:.60 blue:1 alpha:1]];
+    [self label:@"PURPLE NEON EDITION  â¢  BUILD 1.4" frame:CGRectMake(5,33,w-10,18) size:9 color:[UIColor colorWithWhite:1 alpha:.52]];
+    [self label:@"Developer support\nTikTok: @tuatbonxyz\nZalo: 0854582858\n\nTouch passthrough: enabled\nQR engine: Apple Vision\nTimeline automation: runtime API inspection required." frame:CGRectMake(7,65,w-14,125) size:10 color:[UIColor colorWithWhite:1 alpha:.78]];
+    [self button:@"EXPORT VIDEO STAR API DIAGNOSTIC" frame:CGRectMake(5,198,w-10,42) action:@selector(exportRuntimeDiagnostic)];
+    [self finishContentAtY:252];
+}
+
+- (void)presentPhotoPickerAllowingMultiple:(BOOL)multiple purpose:(NSString *)purpose {
+    if (@available(iOS 14.0, *)) {
+        PHPickerConfiguration *config = [[PHPickerConfiguration alloc] init];
+        config.filter = [PHPickerFilter imagesFilter];
+        config.selectionLimit = multiple ? 30 : 1;
+        PHPickerViewController *picker = [[PHPickerViewController alloc] initWithConfiguration:config];
+        picker.delegate = self;
+        objc_setAssociatedObject(picker, @selector(picker:didFinishPicking:), purpose, OBJC_ASSOCIATION_COPY_NONATOMIC);
+        [self presentViewController:picker animated:YES completion:nil];
+    } else {
+        UIImagePickerController *picker = [UIImagePickerController new];
+        picker.sourceType = UIImagePickerControllerSourceTypePhotoLibrary;
+        picker.mediaTypes = @[(NSString *)kUTTypeImage, (NSString *)kUTTypeMovie];
+        picker.delegate = self;
+        objc_setAssociatedObject(picker, @selector(picker:didFinishPicking:), purpose, OBJC_ASSOCIATION_COPY_NONATOMIC);
+        [self presentViewController:picker animated:YES completion:nil];
+    }
+}
+
+- (void)startBatchQR {
+    [self presentPhotoPickerAllowingMultiple:YES purpose:@"qr"];
+}
+
+- (void)startReplaceMedia {
+    [self presentPhotoPickerAllowingMultiple:NO purpose:@"replace"];
+}
+
+- (void)startOneTouchMedia {
+    [self presentPhotoPickerAllowingMultiple:NO purpose:@"quick"];
+}
+
+- (void)picker:(PHPickerViewController *)picker didFinishPicking:(NSArray<PHPickerResult *> *)results API_AVAILABLE(ios(14.0)) {
+    NSString *purpose = objc_getAssociatedObject(picker, @selector(picker:didFinishPicking:));
+    [picker dismissViewControllerAnimated:YES completion:^{
+        if (results.count == 0) return;
+        if ([purpose isEqualToString:@"qr"]) {
+            [self scanQRFromPickerResults:results index:0 collected:[NSMutableArray array]];
+        } else {
+            NSItemProvider *provider = results.firstObject.itemProvider;
+            if ([provider canLoadObjectOfClass:UIImage.class]) {
+                [provider loadObjectOfClass:UIImage.class completionHandler:^(id<NSItemProviderReading> object, NSError *error) {
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        if (error || ![object isKindOfClass:UIImage.class]) {
+                            [self showMessage:@"KhÃ´ng thá» Äá»c áº£nh ÄÃ£ chá»n."];
+                            return;
+                        }
+                        UIImage *image = (UIImage *)object;
+                        NSString *message = [purpose isEqualToString:@"replace"]
+                            ? @"ÄÃ£ chá»n media. Video Star khÃ´ng cung cáº¥p API project/asset trong source hiá»n táº¡i, nÃªn chÆ°a thá» tá»± thay clip trong timeline."
+                            : @"ÄÃ£ chá»n media thÃ nh cÃ´ng. Báº¡n cÃ³ thá» tiáº¿p tá»¥c thao tÃ¡c trong Video Star; source hiá»n chÆ°a cÃ³ API Äá» tá»± chÃ¨n asset vÃ o project.";
+                        [self showImage:image message:message];
+                    });
+                }];
+            } else {
+                [self showMessage:@"Äá»nh dáº¡ng ÄÃ£ chá»n chÆ°a ÄÆ°á»£c há» trá»£ trong báº£n nÃ y."];
+            }
+        }
+    }];
+}
+
+- (void)scanQRFromPickerResults:(NSArray<PHPickerResult *> *)results index:(NSUInteger)index collected:(NSMutableArray<NSString *> *)codes API_AVAILABLE(ios(14.0)) {
+    if (index >= results.count) {
+        NSString *message = codes.count ? [codes componentsJoinedByString:@"\n\n"] : @"KhÃ´ng tÃ¬m tháº¥y mÃ£ QR trong cÃ¡c áº£nh ÄÃ£ chá»n.";
+        NSString *summary = [NSString stringWithFormat:@"ÄÃ£ quÃ©t %lu áº£nh.\nTÃ¬m tháº¥y %lu mÃ£ QR.\n\n%@", (unsigned long)results.count, (unsigned long)codes.count, message];
+        dispatch_async(dispatch_get_main_queue(), ^{ [self showMessage:summary]; });
+        return;
+    }
+    NSItemProvider *provider = results[index].itemProvider;
+    if (![provider canLoadObjectOfClass:UIImage.class]) {
+        [self scanQRFromPickerResults:results index:index+1 collected:codes];
+        return;
+    }
+    [provider loadObjectOfClass:UIImage.class completionHandler:^(id<NSItemProviderReading> object, NSError *error) {
+        if (!error && [object isKindOfClass:UIImage.class]) {
+            UIImage *image = (UIImage *)object;
+            VNDetectBarcodesRequest *request = [VNDetectBarcodesRequest new];
+            request.symbologies = @[VNBarcodeSymbologyQR];
+            VNImageRequestHandler *handler = [[VNImageRequestHandler alloc] initWithCGImage:image.CGImage options:@{}];
+            [handler performRequests:@[request] error:nil];
+            for (VNBarcodeObservation *item in request.results) {
+                if (item.payloadStringValue.length && ![codes containsObject:item.payloadStringValue]) [codes addObject:item.payloadStringValue];
+            }
+        }
+        [self scanQRFromPickerResults:results index:index+1 collected:codes];
+    }];
+}
+
+- (void)imagePickerControllerDidCancel:(UIImagePickerController *)picker {
+    [picker dismissViewControllerAnimated:YES completion:nil];
+}
+
+- (void)imagePickerController:(UIImagePickerController *)picker didFinishPickingMediaWithInfo:(NSDictionary<UIImagePickerControllerInfoKey,id> *)info {
+    NSString *purpose = objc_getAssociatedObject(picker, @selector(picker:didFinishPicking:));
+    UIImage *image = info[UIImagePickerControllerOriginalImage];
+    [picker dismissViewControllerAnimated:YES completion:^{
+        if (image && [purpose isEqualToString:@"qr"]) {
+            VNDetectBarcodesRequest *request = [VNDetectBarcodesRequest new];
+            request.symbologies = @[VNBarcodeSymbologyQR];
+            VNImageRequestHandler *handler = [[VNImageRequestHandler alloc] initWithCGImage:image.CGImage options:@{}];
+            [handler performRequests:@[request] error:nil];
+            NSMutableArray *values = [NSMutableArray array];
+            for (VNBarcodeObservation *item in request.results) if (item.payloadStringValue.length) [values addObject:item.payloadStringValue];
+            [self showMessage:values.count ? [values componentsJoinedByString:@"\n\n"] : @"KhÃ´ng tÃ¬m tháº¥y mÃ£ QR."];
+        } else if (image) {
+            NSString *message = [purpose isEqualToString:@"replace"]
+                ? @"ÄÃ£ chá»n áº£nh. Tá»± Äá»ng thay asset trong timeline cáº§n API project Video Star."
+                : @"ÄÃ£ chá»n áº£nh. Tá»± Äá»ng chÃ¨n vÃ o timeline cáº§n API project Video Star.";
+            [self showImage:image message:message];
+        } else {
+            [self showMessage:@"KhÃ´ng Äá»c ÄÆ°á»£c áº£nh ÄÃ£ chá»n."];
+        }
+    }];
+}
+
+- (void)showImage:(UIImage *)image message:(NSString *)message {
+    CGSize px = CGSizeMake(image.size.width * image.scale, image.size.height * image.scale);
+    [self showMessage:[NSString stringWithFormat:@"%@\n\nImage: %.0f Ã %.0f px", message, px.width, px.height]];
+}
+
+- (void)showMessage:(NSString *)message {
     dispatch_async(dispatch_get_main_queue(), ^{
-        if(DBWindow && DBWindow.rootViewController)return;
-        UIWindowScene *scene=nil;
-        for(UIScene *s in UIApplication.sharedApplication.connectedScenes)
-            if(s.activationState==UISceneActivationStateForegroundActive && [s isKindOfClass:UIWindowScene.class]){scene=(UIWindowScene *)s;break;}
-        if(!scene)return;
-        DBWindow=[[DBPassthroughWindow alloc] initWithWindowScene:scene];
-        DBWindow.frame=scene.coordinateSpace.bounds; DBWindow.windowLevel=UIWindowLevelNormal+1;
-        DBWindow.backgroundColor=UIColor.clearColor;
-        UIViewController *root=[UIViewController new]; root.view.backgroundColor=UIColor.clearColor; DBWindow.rootViewController=root;
-        DBMenuController *menu=[DBMenuController new]; [root addChildViewController:menu];
-        menu.view.frame=root.view.bounds; menu.view.autoresizingMask=UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight;
-        [root.view addSubview:menu.view]; [menu didMoveToParentViewController:root]; DBWindow.hidden=NO;
+        if (!self.viewIfLoaded.window) return;
+        UIViewController *presenter = self;
+        while (presenter.presentedViewController && !presenter.presentedViewController.isBeingDismissed) {
+            presenter = presenter.presentedViewController;
+        }
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"DOXBON VDS" message:message preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+        [presenter presentViewController:alert animated:YES completion:nil];
     });
 }
-__attribute__((constructor)) static void DoxBonLoad(void) {
+
+
+- (void)exportRuntimeDiagnostic {
+    // Read-only runtime inspection. This deliberately does not invoke unknown selectors.
+    NSArray<NSString *> *targets = @[
+        @"ProjectInterface", @"SwiftProjectInterface", @"RestructuredProjectInterface",
+        @"SwiftRestructuredProjectInterface", @"TimelineView", @"FrameTimelineView",
+        @"CTTimeLineView", @"MultiLayerEngine", @"MultiLayerLayer",
+        @"ProjectFileManager", @"ClipPickerNavigationController", @"QRLibraryNavController",
+        @"ProjectCompositionBuilder", @"ClipMixerVC", @"ATSceneView"
+    ];
+    NSMutableString *report = [NSMutableString stringWithString:@"DOXBON VDS â VIDEO STAR RUNTIME API REPORT\nRead-only; no project changes were made.\n\n"];
+    [report appendFormat:@"Bundle: %@\nVersion: %@ (%@)\niOS: %@\n\n",
+        NSBundle.mainBundle.bundleIdentifier ?: @"unknown",
+        [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"unknown",
+        [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"] ?: @"unknown",
+        UIDevice.currentDevice.systemVersion ?: @"unknown"];
+    for (NSString *name in targets) {
+        Class cls = NSClassFromString(name);
+        [report appendFormat:@"===== %@ =====\n", name];
+        if (!cls) {
+            [report appendString:@"CLASS NOT LOADED / NOT FOUND\n\n"];
+            continue;
+        }
+        [report appendFormat:@"Class pointer: %p\nSuperclass: %@\n", cls,
+            class_getSuperclass(cls) ? NSStringFromClass(class_getSuperclass(cls)) : @"none"];
+        unsigned int count = 0;
+        Method *methods = class_copyMethodList(cls, &count);
+        for (unsigned int i = 0; i < count; i++) {
+            SEL sel = method_getName(methods[i]);
+            const char *types = method_getTypeEncoding(methods[i]);
+            [report appendFormat:@"- %@  [%s]\n", NSStringFromSelector(sel), types ?: "?"];
+        }
+        free(methods);
+        [report appendString:@"\n"];
+    }
+    // Include only relevant loaded classes, and list methods whose names suggest project,
+    // timeline, layer, QR, clip, scene, or export functionality.
+    [report appendString:@"===== MATCHING LOADED CLASSES =====\n"];
+    int total = objc_getClassList(NULL, 0);
+    if (total > 0 && total < 50000) {
+        Class *classes = (__unsafe_unretained Class *)calloc((size_t)total, sizeof(Class));
+        int actual = objc_getClassList(classes, total);
+        NSSet *needles = [NSSet setWithArray:@[@"Project", @"Timeline", @"Layer", @"QR", @"Clip", @"Scene", @"Export"]];
+        for (int i = 0; i < actual; i++) {
+            NSString *className = NSStringFromClass(classes[i]);
+            BOOL match = NO;
+            for (NSString *needle in needles) if ([className rangeOfString:needle options:NSCaseInsensitiveSearch].location != NSNotFound) { match = YES; break; }
+            if (!match) continue;
+            [report appendFormat:@"%@\n", className];
+            unsigned int count = 0;
+            Method *methods = class_copyMethodList(classes[i], &count);
+            for (unsigned int j = 0; j < count; j++) {
+                NSString *selName = NSStringFromSelector(method_getName(methods[j]));
+                BOOL relevant = NO;
+                for (NSString *needle in needles) if ([selName rangeOfString:needle options:NSCaseInsensitiveSearch].location != NSNotFound) { relevant = YES; break; }
+                if (relevant) [report appendFormat:@"    %@ [%s]\n", selName, method_getTypeEncoding(methods[j]) ?: "?"];
+            }
+            free(methods);
+        }
+        free(classes);
+    }
+    NSString *docs = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
+    NSString *path = [docs stringByAppendingPathComponent:@"DoxBon_VideoStar_Runtime_API.txt"];
+    NSError *error = nil;
+    BOOL saved = [report writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:&error];
+    if (!saved) {
+        [self showMessage:[NSString stringWithFormat:@"KhÃ´ng lÆ°u ÄÆ°á»£c bÃ¡o cÃ¡o: %@", error.localizedDescription ?: @"unknown error"]];
+        return;
+    }
+    NSURL *url = [NSURL fileURLWithPath:path];
+    UIActivityViewController *share = [[UIActivityViewController alloc] initWithActivityItems:@[url] applicationActivities:nil];
+    if (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad) share.popoverPresentationController.sourceView = self.view;
+    [self presentViewController:share animated:YES completion:nil];
+}
+
+- (NSString *)maskedKey {
+    if (self.activeKey.length < 7) return @"â¢â¢â¢â¢â¢â¢";
+    return [NSString stringWithFormat:@"%@â¢â¢â¢â¢%@",
+            [self.activeKey substringToIndex:3],
+            [self.activeKey substringFromIndex:self.activeKey.length-3]];
+}
+
+- (void)recheckKey {
+    NSString *key = self.activeKey;
+    if (key.length == 0) {
+        [self showLogin];
+        return;
+    }
+
+    [self showLogin];
+    self.keyField.text = key;
+    [self validateKey];
+}
+
+- (void)logout {
+    self.activeKey = nil;
+    self.expiryText = nil;
+    [[NSUserDefaults standardUserDefaults] removeObjectForKey:DBSavedLicenseKey];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+    [self showLogin];
+}
+
+- (void)openMenu {
+    self.panel.hidden = NO;
+    self.floatingButton.hidden = YES;
+}
+
+- (void)closeMenu {
+    self.panel.hidden = YES;
+    self.floatingButton.hidden = NO;
+}
+
+@end
+
+static UIWindow *DBWindow;
+
+static void DBPresentMenu(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
-        [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *n){DBPresentMenu();}];
+        if (DBWindow && DBWindow.rootViewController) return;
+
+        UIWindowScene *scene = nil;
+        for (UIScene *s in UIApplication.sharedApplication.connectedScenes) {
+            if (s.activationState == UISceneActivationStateForegroundActive &&
+                [s isKindOfClass:UIWindowScene.class]) {
+                scene = (UIWindowScene *)s;
+                break;
+            }
+        }
+
+        if (!scene) return;
+
+        DBWindow = [[DBPassthroughWindow alloc] initWithWindowScene:scene];
+        DBWindow.frame = scene.coordinateSpace.bounds;
+        DBWindow.windowLevel = UIWindowLevelNormal + 1;
+        DBWindow.backgroundColor = UIColor.clearColor;
+        DBWindow.userInteractionEnabled = YES;
+
+        UIViewController *root = [UIViewController new];
+        root.view.backgroundColor = UIColor.clearColor;
+        DBWindow.rootViewController = root;
+
+        DBMenuController *menu = [DBMenuController new];
+        [root addChildViewController:menu];
+        menu.view.frame = root.view.bounds;
+        menu.view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        [root.view addSubview:menu.view];
+        [menu didMoveToParentViewController:root];
+
+        DBWindow.hidden = NO;
+    });
+}
+
+__attribute__((constructor))
+static void DoxBonLoad(void) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [[NSNotificationCenter defaultCenter]
+            addObserverForName:UIApplicationDidBecomeActiveNotification
+            object:nil
+            queue:NSOperationQueue.mainQueue
+            usingBlock:^(__unused NSNotification *n) {
+                DBPresentMenu();
+            }];
+
         DBPresentMenu();
     });
 }
