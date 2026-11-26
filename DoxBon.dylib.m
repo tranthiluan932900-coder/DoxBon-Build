@@ -119,7 +119,7 @@ static NSString * const DBZalo = @"0854582858";
     [self.panel.layer addSublayer:streak];
 
     UILabel *star = [[UILabel alloc] initWithFrame:CGRectMake(13, 13, 30, 32)];
-    star.text = @"â";
+    star.text = @"★";
     star.font = [UIFont systemFontOfSize:27 weight:UIFontWeightBlack];
     star.textColor = [UIColor colorWithRed:.68 green:.25 blue:1 alpha:1];
     [self.panel addSubview:star];
@@ -131,7 +131,7 @@ static NSString * const DBZalo = @"0854582858";
     [self.panel addSubview:title];
 
     self.headerSubtitle = [[UILabel alloc] initWithFrame:CGRectMake(48, 37, panelW-100, 15)];
-    self.headerSubtitle.text = @"VIP CONTROL CENTER  â¢  ONLINE  â";
+    self.headerSubtitle.text = @"VIP CONTROL CENTER  •  ONLINE  ●";
     self.headerSubtitle.font = [UIFont systemFontOfSize:8.5 weight:UIFontWeightSemibold];
     self.headerSubtitle.textColor = [UIColor colorWithWhite:1 alpha:.76];
     [self.panel addSubview:self.headerSubtitle];
@@ -142,7 +142,7 @@ static NSString * const DBZalo = @"0854582858";
     close.layer.cornerRadius = 10;
     close.layer.borderWidth = 1;
     close.layer.borderColor = [UIColor colorWithRed:.58 green:.28 blue:1 alpha:.7].CGColor;
-    [close setTitle:@"Ã" forState:UIControlStateNormal];
+    [close setTitle:@"×" forState:UIControlStateNormal];
     close.titleLabel.font = [UIFont systemFontOfSize:22 weight:UIFontWeightLight];
     [close setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
     [close addTarget:self action:@selector(closeMenu) forControlEvents:UIControlEventTouchUpInside];
@@ -159,7 +159,7 @@ static NSString * const DBZalo = @"0854582858";
     self.tabBar.layer.cornerRadius = 17;
     [self.panel addSubview:self.tabBar];
 
-    NSArray *names = @[@"â\nHOME", @"â¦\nQR LAB", @"â·\nMEDIA", @"â\nSETTINGS", @"â\nINFO"];
+    NSArray *names = @[@"⌂\nHOME", @"▦\nQR LAB", @"▷\nMEDIA", @"⚙\nSETTINGS", @"ⓘ\nINFO"];
     NSMutableArray *buttons = [NSMutableArray array];
     CGFloat gap = 4.0;
     CGFloat tabW = floor((panelW-30.0-gap*4.0)/5.0);
@@ -199,7 +199,7 @@ static NSString * const DBZalo = @"0854582858";
     self.floatingButton.layer.shadowColor = [UIColor colorWithRed:.68 green:.12 blue:1 alpha:1].CGColor;
     self.floatingButton.layer.shadowOpacity = .9;
     self.floatingButton.layer.shadowRadius = 15;
-    [self.floatingButton setTitle:@"â\nDB" forState:UIControlStateNormal];
+    [self.floatingButton setTitle:@"♛\nDB" forState:UIControlStateNormal];
     [self.floatingButton setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
     self.floatingButton.titleLabel.font = [UIFont systemFontOfSize:14 weight:UIFontWeightBlack];
     self.floatingButton.titleLabel.numberOfLines = 2;
@@ -320,7 +320,7 @@ static NSString * const DBZalo = @"0854582858";
     self.contentScroll.contentSize = self.contentScroll.bounds.size;
 
     UILabel *hint = [[UILabel alloc] initWithFrame:CGRectMake(8,24,self.contentView.bounds.size.width-16,30)];
-    hint.text = @"Nháº­p VIP Key Äá» tiáº¿p tá»¥c";
+    hint.text = @"Nhập VIP Key để tiếp tục";
     hint.textColor = UIColor.whiteColor;
     hint.textAlignment = NSTextAlignmentCenter;
     hint.font = [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold];
@@ -337,10 +337,10 @@ static NSString * const DBZalo = @"0854582858";
         attributes:@{NSForegroundColorAttributeName:[UIColor colorWithWhite:1 alpha:.55]}];
     [self.contentView addSubview:self.keyField];
 
-    [self button:@"XÃC NHáº¬N KEY" frame:CGRectMake(8,132,self.contentView.bounds.size.width-16,42) action:@selector(validateKey)];
+    [self button:@"XÁC NHẬN KEY" frame:CGRectMake(8,132,self.contentView.bounds.size.width-16,42) action:@selector(validateKey)];
 
     self.statusLabel = [[UILabel alloc] initWithFrame:CGRectMake(8,188,self.contentView.bounds.size.width-16,42)];
-    self.statusLabel.text = @"Káº¿t ná»i mÃ¡y chá»§ Äá» xÃ¡c thá»±c";
+    self.statusLabel.text = @"Kết nối máy chủ để xác thực";
     self.statusLabel.textColor = [UIColor colorWithWhite:1 alpha:.7];
     self.statusLabel.font = [UIFont systemFontOfSize:12];
     self.statusLabel.textAlignment = NSTextAlignmentCenter;
@@ -355,7 +355,7 @@ static NSString * const DBZalo = @"0854582858";
     NSURL *url = [NSURL URLWithString:endpoint];
     if (!url) {
         NSError *e = [NSError errorWithDomain:@"DoxBonLicense" code:1
-                                     userInfo:@{NSLocalizedDescriptionKey:@"Äá»a chá» API khÃ´ng há»£p lá»."}];
+                                     userInfo:@{NSLocalizedDescriptionKey:@"Địa chỉ API không hợp lệ."}];
         completion(nil, e);
         return;
     }
@@ -395,11 +395,11 @@ static NSString * const DBZalo = @"0854582858";
         [NSCharacterSet whitespaceAndNewlineCharacterSet]];
     NSString *key = [trimmedKey uppercaseString];
     if (key.length < 8) {
-        self.statusLabel.text = @"Vui lÃ²ng nháº­p VIP Key há»£p lá».";
+        self.statusLabel.text = @"Vui lòng nhập VIP Key hợp lệ.";
         return;
     }
 
-    self.statusLabel.text = @"Äang kÃ­ch hoáº¡t thiáº¿t bá»...";
+    self.statusLabel.text = @"Đang kích hoạt thiết bị...";
     NSString *deviceID = UIDevice.currentDevice.identifierForVendor.UUIDString ?: @"unknown-device";
 
     [self sendLicenseRequestTo:DBLicenseActivateEndpoint key:key deviceID:deviceID
@@ -409,12 +409,12 @@ static NSString * const DBZalo = @"0854582858";
                              && [activation[@"ok"] boolValue];
             if (!activated) {
                 NSString *message = [activation[@"error"] isKindOfClass:NSString.class]
-                                    ? activation[@"error"] : @"KhÃ´ng thá» kÃ­ch hoáº¡t key.";
-                self.statusLabel.text = activationError ? @"KhÃ´ng káº¿t ná»i ÄÆ°á»£c mÃ¡y chá»§." : message;
+                                    ? activation[@"error"] : @"Không thể kích hoạt key.";
+                self.statusLabel.text = activationError ? @"Không kết nối được máy chủ." : message;
                 return;
             }
 
-            self.statusLabel.text = @"Äang kiá»m tra giáº¥y phÃ©p...";
+            self.statusLabel.text = @"Đang kiểm tra giấy phép...";
             [self sendLicenseRequestTo:DBLicenseValidateEndpoint key:key deviceID:deviceID
                             completion:^(NSDictionary *validation, NSError *validationError) {
                 dispatch_async(dispatch_get_main_queue(), ^{
@@ -433,13 +433,13 @@ static NSString * const DBZalo = @"0854582858";
                             formatter.timeStyle = NSDateFormatterNoStyle;
                             self.expiryText = [formatter stringFromDate:date];
                         } else {
-                            self.expiryText = @"VÄ©nh viá»n";
+                            self.expiryText = @"Vĩnh viễn";
                         }
                         [self showDashboardWithExpiry:self.expiryText];
                     } else {
                         NSString *message = [validation[@"error"] isKindOfClass:NSString.class]
-                                            ? validation[@"error"] : @"Key khÃ´ng há»£p lá» hoáº·c ÄÃ£ háº¿t háº¡n.";
-                        self.statusLabel.text = validationError ? @"KhÃ´ng káº¿t ná»i ÄÆ°á»£c mÃ¡y chá»§." : message;
+                                            ? validation[@"error"] : @"Key không hợp lệ hoặc đã hết hạn.";
+                        self.statusLabel.text = validationError ? @"Không kết nối được máy chủ." : message;
                     }
                 });
             }];
@@ -451,7 +451,7 @@ static NSString * const DBZalo = @"0854582858";
     NSString *savedKey = [[NSUserDefaults standardUserDefaults] stringForKey:DBSavedLicenseKey];
     if (![savedKey isKindOfClass:NSString.class] || savedKey.length < 8) return;
     self.keyField.text = savedKey;
-    self.statusLabel.text = @"Äang kiá»m tra láº¡i VIP Key ÄÃ£ lÆ°u...";
+    self.statusLabel.text = @"Đang kiểm tra lại VIP Key đã lưu...";
     NSString *deviceID = UIDevice.currentDevice.identifierForVendor.UUIDString ?: @"unknown-device";
     [self sendLicenseRequestTo:DBLicenseValidateEndpoint key:savedKey deviceID:deviceID
                     completion:^(NSDictionary *validation, NSError *error) {
@@ -461,7 +461,7 @@ static NSString * const DBZalo = @"0854582858";
                          && [@"active" isEqualToString:validation[@"status"]];
             if (!valid) {
                 // Keep the key in the field so the user can retry if the server was offline.
-                self.statusLabel.text = error ? @"KhÃ´ng káº¿t ná»i ÄÆ°á»£c mÃ¡y chá»§. Key váº«n ÄÆ°á»£c giá»¯ láº¡i." : @"Key khÃ´ng cÃ²n hoáº¡t Äá»ng. Vui lÃ²ng nháº­p key khÃ¡c.";
+                self.statusLabel.text = error ? @"Không kết nối được máy chủ. Key vẫn được giữ lại." : @"Key không còn hoạt động. Vui lòng nhập key khác.";
                 if (!error) {
                     [[NSUserDefaults standardUserDefaults] removeObjectForKey:DBSavedLicenseKey];
                     [[NSUserDefaults standardUserDefaults] synchronize];
@@ -477,7 +477,7 @@ static NSString * const DBZalo = @"0854582858";
                 formatter.timeStyle = NSDateFormatterNoStyle;
                 self.expiryText = [formatter stringFromDate:date];
             } else {
-                self.expiryText = @"VÄ©nh viá»n";
+                self.expiryText = @"Vĩnh viễn";
             }
             [self showDashboardWithExpiry:self.expiryText];
         });
@@ -485,9 +485,9 @@ static NSString * const DBZalo = @"0854582858";
 }
 
 - (void)showDashboardWithExpiry:(NSString *)expiry {
-    self.expiryText = expiry ?: @"KhÃ´ng xÃ¡c Äá»nh";
+    self.expiryText = expiry ?: @"Không xác định";
     self.tabBar.hidden = NO;
-    self.headerSubtitle.text = @"VIP ACCESS  â¢  PROTECTED SESSION";
+    self.headerSubtitle.text = @"VIP ACCESS  •  PROTECTED SESSION";
     [self showFeatures];
 }
 
@@ -510,7 +510,7 @@ static NSString * const DBZalo = @"0854582858";
     sectionMark.layer.cornerRadius = 2;
     [self.contentView addSubview:sectionMark];
     [self label:@"CONTROL CENTER" frame:CGRectMake(14,4,w-20,19) size:10 color:[UIColor colorWithWhite:.78 alpha:1]];
-    [self label:@"ChÃ o má»«ng trá» láº¡i DoxBon VIP  â" frame:CGRectMake(8,27,w-16,27) size:14.5 color:UIColor.whiteColor];
+    [self label:@"Chào mừng trở lại DoxBon VIP  ♛" frame:CGRectMake(8,27,w-16,27) size:14.5 color:UIColor.whiteColor];
 
     UIView *status = [[UIView alloc] initWithFrame:CGRectMake(5,62,w-10,36)];
     status.backgroundColor = [UIColor colorWithRed:.025 green:.20 blue:.12 alpha:.78];
@@ -522,7 +522,7 @@ static NSString * const DBZalo = @"0854582858";
     status.layer.shadowRadius = 8;
     [self.contentView addSubview:status];
     UILabel *st = [[UILabel alloc] initWithFrame:CGRectMake(12,0,status.bounds.size.width-24,36)];
-    st.text = [NSString stringWithFormat:@"â  VIP ACTIVE  â¢  %@                         â", self.expiryText ?: @"VÄ©nh viá»n"];
+    st.text = [NSString stringWithFormat:@"●  VIP ACTIVE  •  %@                         ♛", self.expiryText ?: @"Vĩnh viễn"];
     st.font = [UIFont systemFontOfSize:10.5 weight:UIFontWeightBold];
     st.textColor = [UIColor colorWithRed:.48 green:1 blue:.68 alpha:1];
     st.adjustsFontSizeToFitWidth = YES;
@@ -537,14 +537,14 @@ static NSString * const DBZalo = @"0854582858";
 
     CGFloat gap = 7;
     CGFloat cardW = (w-17-gap)/2.0;
-    [self button:@"â¦   BATCH QR     âº" frame:CGRectMake(5,134,cardW,43) action:@selector(startBatchQR)];
-    [self button:@"â§   REPLACE MEDIA  âº" frame:CGRectMake(12+cardW,134,cardW,43) action:@selector(startReplaceMedia)];
-    [self button:@"â¦   ONE-TOUCH    âº" frame:CGRectMake(5,184,cardW,43) action:@selector(startOneTouchMedia)];
-    [self button:@"â   SETTINGS     âº" frame:CGRectMake(12+cardW,184,cardW,43) action:@selector(showSettings)];
+    [self button:@"▦   BATCH QR     ›" frame:CGRectMake(5,134,cardW,43) action:@selector(startBatchQR)];
+    [self button:@"▧   REPLACE MEDIA  ›" frame:CGRectMake(12+cardW,134,cardW,43) action:@selector(startReplaceMedia)];
+    [self button:@"✦   ONE-TOUCH    ›" frame:CGRectMake(5,184,cardW,43) action:@selector(startOneTouchMedia)];
+    [self button:@"♫   AUTO BEAT     ›" frame:CGRectMake(12+cardW,184,cardW,43) action:@selector(showAutoBeatExperimental)];
 
-    UILabel *tip = [self label:@"â  QR LAB: quÃ©t vÃ  Äá»c mÃ£ QR.\nTá»± nháº­p QR/xuáº¥t video cáº§n xÃ¡c minh API runtime." frame:CGRectMake(12,237,w-24,38) size:9.5 color:[UIColor colorWithWhite:.70 alpha:1]];
+    UILabel *tip = [self label:@"ⓘ  ĐANG HOẠT ĐỘNG: quét QR, VIP, báo cáo API.\nCác tính năng chỉnh timeline/xuất tự động đang thử nghiệm." frame:CGRectMake(12,237,w-24,42) size:9.5 color:[UIColor colorWithWhite:.70 alpha:1]];
     tip.numberOfLines = 2;
-    [self finishContentAtY:282];
+    [self finishContentAtY:286];
 }
 
 - (void)showQRTab {
@@ -552,10 +552,11 @@ static NSString * const DBZalo = @"0854582858";
     [self clearDashboardContent];
     CGFloat w = self.contentView.bounds.size.width;
     [self label:@"QR LAB" frame:CGRectMake(5,5,w-10,23) size:16 color:[UIColor colorWithRed:.75 green:.56 blue:1 alpha:1]];
-    [self label:@"QuÃ©t mÃ£ QR tá»« nhiá»u áº£nh trong thÆ° viá»n." frame:CGRectMake(5,32,w-10,32) size:10 color:[UIColor colorWithWhite:1 alpha:.65]];
-    [self button:@"â¦  CHá»N NHIá»U áº¢NH Äá» QUÃT QR" frame:CGRectMake(5,78,w-10,48) action:@selector(startBatchQR)];
-    [self label:@"Há» trá»£ tá»i Äa 30 áº£nh má»i lÆ°á»£t. Káº¿t quáº£ ÄÆ°á»£c hiá»n thá» sau khi Vision xá»­ lÃ½ xong." frame:CGRectMake(7,139,w-14,48) size:9 color:[UIColor colorWithWhite:1 alpha:.50]];
-    [self finishContentAtY:205];
+    [self label:@"ĐANG HOẠT ĐỘNG: quét và đọc QR từ thư viện ảnh." frame:CGRectMake(5,32,w-10,32) size:10 color:[UIColor colorWithWhite:1 alpha:.65]];
+    [self button:@"▦  CHỌN NHIỀU ẢNH ĐỂ QUÉT QR" frame:CGRectMake(5,76,w-10,46) action:@selector(startBatchQR)];
+    [self button:@"QR MERGE + AUTO EXPORT  ·  THỬ NGHIỆM" frame:CGRectMake(5,130,w-10,42) action:@selector(showQRMergeExperimental)];
+    [self label:@"Quét tối đa 30 ảnh mỗi lượt. Ghép QR vào beat và xuất từng video chưa được bật cho đến khi xác minh API." frame:CGRectMake(7,180,w-14,48) size:9 color:[UIColor colorWithWhite:1 alpha:.50]];
+    [self finishContentAtY:238];
 }
 
 - (void)showMediaTab {
@@ -563,10 +564,11 @@ static NSString * const DBZalo = @"0854582858";
     [self clearDashboardContent];
     CGFloat w = self.contentView.bounds.size.width;
     [self label:@"MEDIA TOOLS" frame:CGRectMake(5,5,w-10,23) size:16 color:[UIColor colorWithRed:.48 green:.82 blue:1 alpha:1]];
-    [self label:@"Chá»n áº£nh Äá» chuáº©n bá» thao tÃ¡c. Hai nÃºt dÆ°á»i ÄÃ¢y chÆ°a tá»± sá»­a timeline Video Star." frame:CGRectMake(5,32,w-10,42) size:9 color:[UIColor colorWithWhite:1 alpha:.60]];
-    [self button:@"â§  REPLACE MEDIA  /  CHá»N áº¢NH" frame:CGRectMake(5,88,w-10,48) action:@selector(startReplaceMedia)];
-    [self button:@"â¦  ONE-TOUCH MEDIA  /  CHá»N NHANH" frame:CGRectMake(5,148,w-10,48) action:@selector(startOneTouchMedia)];
-    [self finishContentAtY:215];
+    [self label:@"Các thao tác thay/chèn asset cần API project đã xác minh." frame:CGRectMake(5,32,w-10,35) size:9 color:[UIColor colorWithWhite:1 alpha:.60]];
+    [self button:@"▧  REPLACE MEDIA  ·  THỬ NGHIỆM" frame:CGRectMake(5,78,w-10,44) action:@selector(startReplaceMedia)];
+    [self button:@"✦  ONE-TOUCH MEDIA  ·  THỬ NGHIỆM" frame:CGRectMake(5,130,w-10,44) action:@selector(startOneTouchMedia)];
+    [self button:@"♫  AUTO BEAT  ·  THỬ NGHIỆM" frame:CGRectMake(5,182,w-10,44) action:@selector(showAutoBeatExperimental)];
+    [self finishContentAtY:238];
 }
 
 - (void)showSettings {
@@ -577,7 +579,7 @@ static NSString * const DBZalo = @"0854582858";
     NSArray *lines = @[
         [NSString stringWithFormat:@"TikTok     %@", DBTikTok],
         [NSString stringWithFormat:@"Zalo        %@", DBZalo],
-        [NSString stringWithFormat:@"Expires    %@", self.expiryText ?: @"KhÃ´ng xÃ¡c Äá»nh"],
+        [NSString stringWithFormat:@"Expires    %@", self.expiryText ?: @"Không xác định"],
         [NSString stringWithFormat:@"License    %@", [self maskedKey]]
     ];
     CGFloat y=42;
@@ -603,7 +605,7 @@ static NSString * const DBZalo = @"0854582858";
     [self clearDashboardContent];
     CGFloat w = self.contentView.bounds.size.width;
     [self label:@"DOXBON VDS TOOL" frame:CGRectMake(5,5,w-10,24) size:16 color:[UIColor colorWithRed:.80 green:.60 blue:1 alpha:1]];
-    [self label:@"PURPLE NEON EDITION  â¢  BUILD 1.4" frame:CGRectMake(5,33,w-10,18) size:9 color:[UIColor colorWithWhite:1 alpha:.52]];
+    [self label:@"PURPLE NEON EDITION  •  BUILD 1.4" frame:CGRectMake(5,33,w-10,18) size:9 color:[UIColor colorWithWhite:1 alpha:.52]];
     [self label:@"Developer support\nTikTok: @tuatbonxyz\nZalo: 0854582858\n\nTouch passthrough: enabled\nQR engine: Apple Vision\nTimeline automation: runtime API inspection required." frame:CGRectMake(7,65,w-14,125) size:10 color:[UIColor colorWithWhite:1 alpha:.78]];
     [self button:@"EXPORT VIDEO STAR API DIAGNOSTIC" frame:CGRectMake(5,198,w-10,42) action:@selector(exportRuntimeDiagnostic)];
     [self finishContentAtY:252];
@@ -632,12 +634,25 @@ static NSString * const DBZalo = @"0854582858";
     [self presentPhotoPickerAllowingMultiple:YES purpose:@"qr"];
 }
 
+- (void)showExperimentalNotice:(NSString *)feature detail:(NSString *)detail {
+    NSString *message = [NSString stringWithFormat:@"%@ đang trong giai đoạn thử nghiệm và sẽ sớm hoàn thành.\n\n%@\n\nHiện tại tính năng chưa thay đổi project Video Star để tránh làm hỏng timeline.", feature, detail];
+    [self showMessage:message];
+}
+
 - (void)startReplaceMedia {
-    [self presentPhotoPickerAllowingMultiple:NO purpose:@"replace"];
+    [self showExperimentalNotice:@"REPLACE MEDIA" detail:@"Chức năng cần xác minh cách Video Star lưu và thay asset của clip."];
 }
 
 - (void)startOneTouchMedia {
-    [self presentPhotoPickerAllowingMultiple:NO purpose:@"quick"];
+    [self showExperimentalNotice:@"ONE-TOUCH" detail:@"Chức năng cần xác minh lớp video, layer đang chọn và quy trình chèn ảnh vào timeline."];
+}
+
+- (void)showQRMergeExperimental {
+    [self showExperimentalNotice:@"QR LAB — MERGE / AUTO EXPORT" detail:@"Hiện bản này chỉ quét và đọc QR. Ghép từng QR vào beat và xuất từng video sẽ được bật sau khi xác minh API."];
+}
+
+- (void)showAutoBeatExperimental {
+    [self showExperimentalNotice:@"AUTO BEAT" detail:@"Phân tích beat và đồng bộ clip chưa được nối với timeline editor trong phiên bản này."];
 }
 
 - (void)picker:(PHPickerViewController *)picker didFinishPicking:(NSArray<PHPickerResult *> *)results API_AVAILABLE(ios(14.0)) {
@@ -652,18 +667,16 @@ static NSString * const DBZalo = @"0854582858";
                 [provider loadObjectOfClass:UIImage.class completionHandler:^(id<NSItemProviderReading> object, NSError *error) {
                     dispatch_async(dispatch_get_main_queue(), ^{
                         if (error || ![object isKindOfClass:UIImage.class]) {
-                            [self showMessage:@"KhÃ´ng thá» Äá»c áº£nh ÄÃ£ chá»n."];
+                            [self showMessage:@"Không thể đọc ảnh đã chọn."];
                             return;
                         }
                         UIImage *image = (UIImage *)object;
-                        NSString *message = [purpose isEqualToString:@"replace"]
-                            ? @"ÄÃ£ chá»n media. Video Star khÃ´ng cung cáº¥p API project/asset trong source hiá»n táº¡i, nÃªn chÆ°a thá» tá»± thay clip trong timeline."
-                            : @"ÄÃ£ chá»n media thÃ nh cÃ´ng. Báº¡n cÃ³ thá» tiáº¿p tá»¥c thao tÃ¡c trong Video Star; source hiá»n chÆ°a cÃ³ API Äá» tá»± chÃ¨n asset vÃ o project.";
+                        NSString *message = @"Đã đọc ảnh từ thư viện. Việc chèn/thay asset trong timeline hiện đang ở giai đoạn thử nghiệm.";
                         [self showImage:image message:message];
                     });
                 }];
             } else {
-                [self showMessage:@"Äá»nh dáº¡ng ÄÃ£ chá»n chÆ°a ÄÆ°á»£c há» trá»£ trong báº£n nÃ y."];
+                [self showMessage:@"Định dạng đã chọn chưa được hỗ trợ trong bản này."];
             }
         }
     }];
@@ -671,8 +684,8 @@ static NSString * const DBZalo = @"0854582858";
 
 - (void)scanQRFromPickerResults:(NSArray<PHPickerResult *> *)results index:(NSUInteger)index collected:(NSMutableArray<NSString *> *)codes API_AVAILABLE(ios(14.0)) {
     if (index >= results.count) {
-        NSString *message = codes.count ? [codes componentsJoinedByString:@"\n\n"] : @"KhÃ´ng tÃ¬m tháº¥y mÃ£ QR trong cÃ¡c áº£nh ÄÃ£ chá»n.";
-        NSString *summary = [NSString stringWithFormat:@"ÄÃ£ quÃ©t %lu áº£nh.\nTÃ¬m tháº¥y %lu mÃ£ QR.\n\n%@", (unsigned long)results.count, (unsigned long)codes.count, message];
+        NSString *message = codes.count ? [codes componentsJoinedByString:@"\n\n"] : @"Không tìm thấy mã QR trong các ảnh đã chọn.";
+        NSString *summary = [NSString stringWithFormat:@"Đã quét %lu ảnh.\nTìm thấy %lu mã QR.\n\n%@", (unsigned long)results.count, (unsigned long)codes.count, message];
         dispatch_async(dispatch_get_main_queue(), ^{ [self showMessage:summary]; });
         return;
     }
@@ -711,21 +724,21 @@ static NSString * const DBZalo = @"0854582858";
             [handler performRequests:@[request] error:nil];
             NSMutableArray *values = [NSMutableArray array];
             for (VNBarcodeObservation *item in request.results) if (item.payloadStringValue.length) [values addObject:item.payloadStringValue];
-            [self showMessage:values.count ? [values componentsJoinedByString:@"\n\n"] : @"KhÃ´ng tÃ¬m tháº¥y mÃ£ QR."];
+            [self showMessage:values.count ? [values componentsJoinedByString:@"\n\n"] : @"Không tìm thấy mã QR."];
         } else if (image) {
             NSString *message = [purpose isEqualToString:@"replace"]
-                ? @"ÄÃ£ chá»n áº£nh. Tá»± Äá»ng thay asset trong timeline cáº§n API project Video Star."
-                : @"ÄÃ£ chá»n áº£nh. Tá»± Äá»ng chÃ¨n vÃ o timeline cáº§n API project Video Star.";
+                ? @"Đã chọn ảnh. Tự động thay asset trong timeline cần API project Video Star."
+                : @"Đã chọn ảnh. Tự động chèn vào timeline cần API project Video Star.";
             [self showImage:image message:message];
         } else {
-            [self showMessage:@"KhÃ´ng Äá»c ÄÆ°á»£c áº£nh ÄÃ£ chá»n."];
+            [self showMessage:@"Không đọc được ảnh đã chọn."];
         }
     }];
 }
 
 - (void)showImage:(UIImage *)image message:(NSString *)message {
     CGSize px = CGSizeMake(image.size.width * image.scale, image.size.height * image.scale);
-    [self showMessage:[NSString stringWithFormat:@"%@\n\nImage: %.0f Ã %.0f px", message, px.width, px.height]];
+    [self showMessage:[NSString stringWithFormat:@"%@\n\nImage: %.0f × %.0f px", message, px.width, px.height]];
 }
 
 - (void)showMessage:(NSString *)message {
@@ -751,7 +764,7 @@ static NSString * const DBZalo = @"0854582858";
         @"ProjectFileManager", @"ClipPickerNavigationController", @"QRLibraryNavController",
         @"ProjectCompositionBuilder", @"ClipMixerVC", @"ATSceneView"
     ];
-    NSMutableString *report = [NSMutableString stringWithString:@"DOXBON VDS â VIDEO STAR RUNTIME API REPORT\nRead-only; no project changes were made.\n\n"];
+    NSMutableString *report = [NSMutableString stringWithString:@"DOXBON VDS — VIDEO STAR RUNTIME API REPORT\nRead-only; no project changes were made.\n\n"];
     [report appendFormat:@"Bundle: %@\nVersion: %@ (%@)\niOS: %@\n\n",
         NSBundle.mainBundle.bundleIdentifier ?: @"unknown",
         [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"unknown",
@@ -807,7 +820,7 @@ static NSString * const DBZalo = @"0854582858";
     NSError *error = nil;
     BOOL saved = [report writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:&error];
     if (!saved) {
-        [self showMessage:[NSString stringWithFormat:@"KhÃ´ng lÆ°u ÄÆ°á»£c bÃ¡o cÃ¡o: %@", error.localizedDescription ?: @"unknown error"]];
+        [self showMessage:[NSString stringWithFormat:@"Không lưu được báo cáo: %@", error.localizedDescription ?: @"unknown error"]];
         return;
     }
     NSURL *url = [NSURL fileURLWithPath:path];
@@ -817,8 +830,8 @@ static NSString * const DBZalo = @"0854582858";
 }
 
 - (NSString *)maskedKey {
-    if (self.activeKey.length < 7) return @"â¢â¢â¢â¢â¢â¢";
-    return [NSString stringWithFormat:@"%@â¢â¢â¢â¢%@",
+    if (self.activeKey.length < 7) return @"••••••";
+    return [NSString stringWithFormat:@"%@••••%@",
             [self.activeKey substringToIndex:3],
             [self.activeKey substringFromIndex:self.activeKey.length-3]];
 }
